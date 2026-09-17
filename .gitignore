@@ -1,0 +1,15 @@
+# 秘密情報
+.env
+.env.*
+
+# OS の一時ファイル
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# エディタの一時ファイル
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
