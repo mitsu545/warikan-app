@@ -60,8 +60,14 @@ function settleText(month) {
 }
 
 // ===== 画面切替 =====
+const TAB_VIEWS = ['home', 'list', 'settings'];
 function show(view) {
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `view-${view}`; });
+  // 作業中の画面（確認・仕訳／金額だけ入力）ではタブバーを隠して集中できるようにする
+  const useTab = TAB_VIEWS.includes(view);
+  $('#tabbar').hidden = !useTab;
+  document.body.classList.toggle('has-tabbar', useTab);
+  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === view));
   if (view === 'home') renderHome();
   if (view === 'review') renderReview();
   if (view === 'manual') renderManual();
@@ -75,8 +81,21 @@ document.addEventListener('click', (ev) => {
 });
 
 // ===== ① ホーム =====
+function monthLabel(month) {
+  const [y, m] = month.split('-');
+  return `${y}年${Number(m)}月`;
+}
 function renderHome() {
-  $('#home-settle').textContent = settleText(thisMonth());
+  const s = settlement(thisMonth());
+  $('#home-month').textContent = monthLabel(thisMonth());
+  $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
+  const flow = $('#home-flow');
+  if (s.direction === 'none') {
+    flow.innerHTML = '<span class="flow-none">貸し借りなし</span>';
+  } else {
+    const [from, to] = s.direction === 'me_to_wife' ? ['me', 'wife'] : ['wife', 'me'];
+    flow.innerHTML = `<span class="who ${from}">${PERSON_LABEL[from]}</span><span class="arrow">→</span><span class="who ${to}">${PERSON_LABEL[to]}</span>`;
+  }
   $('#home-draft').hidden = !draft;
 }
 
@@ -158,24 +177,40 @@ function renderReview() {
   $('#r-date').value = draft.date;
   $('#r-store').value = draft.store;
   $('#r-total').value = draft.total;
-  $('#r-payer').textContent = `支払: ${PERSON_LABEL[draft.payer]}`;
+  $('#r-payer').textContent = PERSON_LABEL[draft.payer];
   renderRows();
 }
 
 function renderRows() {
   const ul = $('#rows');
+  const rows = draftRows();
   ul.innerHTML = '';
-  draftRows().forEach((it, idx) => {
+  rows.forEach((it, idx) => {
     const li = document.createElement('li');
     li.className = `row ${it.share}${it.adjust ? ' adjust' : ''}`;
     li.dataset.idx = idx;
     const ro = it.adjust ? 'readonly' : '';
     li.innerHTML = `
       <input class="name" type="text" value="${esc(it.item)}" ${ro}>
-      <input class="amt" type="number" inputmode="numeric" value="${it.amount}" ${ro}>
-      <button class="share" type="button" ${it.adjust ? 'disabled' : ''}>${it.rule ? '🔁' : ''}${SHARE_LABEL[it.share]}</button>
-      ${it.adjust ? '' : '<button class="del" type="button" aria-label="削除">×</button>'}`;
+      <div class="ctrl">
+        <input class="amt" type="number" inputmode="numeric" value="${it.amount}" ${ro}>
+        <span class="cur">円</span>
+        <button class="share" type="button" ${it.adjust ? 'disabled' : ''}>${it.rule ? '<span class="rule">🔁</span>' : ''}${SHARE_LABEL[it.share]}</button>
+        ${it.adjust ? '' : '<button class="del" type="button" aria-label="削除">×</button>'}
+      </div>`;
     ul.appendChild(li);
+  });
+  renderSumbar(rows);
+}
+
+// 共通・私・妻の内訳を帯グラフで表示（マイナス金額は幅の計算だけ絶対値にする）
+function renderSumbar(rows) {
+  const total = { common: 0, me: 0, wife: 0 };
+  rows.forEach((r) => { total[r.share] += r.amount; });
+  const base = SHARES.reduce((s, k) => s + Math.abs(total[k]), 0) || 1;
+  SHARES.forEach((k) => {
+    $(`#seg-${k}`).style.width = `${(Math.abs(total[k]) / base) * 100}%`;
+    $(`#sum-${k}`).textContent = yen(total[k]);
   });
 }
 
@@ -185,10 +220,10 @@ $('#rows').addEventListener('click', (ev) => {
   if (!li) return;
   const it = draft.items[li.dataset.idx];
   if (!it) return;                                   // 調整行は対象外
-  if (ev.target.classList.contains('share')) {
+  if (ev.target.closest('.share')) {
     it.share = nextShare(it.share);
     it.rule = false;                                 // 手で変えたらルール印は消す
-  } else if (ev.target.classList.contains('del')) {
+  } else if (ev.target.closest('.del')) {
     draft.items.splice(li.dataset.idx, 1);
   } else return;
   saveDraft();
@@ -203,6 +238,15 @@ $('#rows').addEventListener('change', (ev) => {
   saveDraft();
   renderRows();                                      // 調整行を計算し直す
 });
+// まとめて区分を変える（自分の分だけのレシートを1タップで終わらせる）
+$('#bulk').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-bulk]');
+  if (!btn || !draft) return;
+  draft.items.forEach((it) => { it.share = btn.dataset.bulk; it.rule = false; });
+  saveDraft();
+  renderRows();
+});
+
 $('#add-row').addEventListener('click', () => {
   draft.items.push({ item: '', amount: 0, share: 'common' });
   saveDraft();
@@ -216,7 +260,7 @@ $('#r-store').addEventListener('change', (ev) => { draft.store = ev.target.value
 $('#r-total').addEventListener('change', (ev) => { draft.total = Number(ev.target.value) || 0; saveDraft(); renderRows(); });
 $('#r-payer').addEventListener('click', () => {
   draft.payer = otherPerson(draft.payer);
-  $('#r-payer').textContent = `支払: ${PERSON_LABEL[draft.payer]}`;
+  $('#r-payer').textContent = PERSON_LABEL[draft.payer];
   saveDraft();
 });
 
@@ -280,6 +324,7 @@ $('#m-send').addEventListener('click', () => {
 // ===== ③ 今月の一覧 =====
 function renderList() {
   const month = thisMonth();
+  $('#list-month').textContent = monthLabel(month);
   $('#list-settle').textContent = settleText(month);
   const ul = $('#list-rows');
   ul.innerHTML = '';
@@ -290,7 +335,7 @@ function renderList() {
     li.className = `row ${e.share}`;
     li.dataset.id = e.id;
     li.innerHTML = `
-      <div><div>${esc(e.item)}</div><div class="meta">${e.date.slice(5).replace('-', '/')} ${esc(e.store)}・支払 ${PERSON_LABEL[e.payer]}</div></div>
+      <div><div class="name-static">${esc(e.item)}</div><div class="meta">${e.date.slice(5).replace('-', '/')} ${esc(e.store)}・支払 ${PERSON_LABEL[e.payer]}</div></div>
       <div class="amt">${yen(e.amount)}</div>
       <button class="share" type="button">${SHARE_LABEL[e.share]}</button>
       <button class="del" type="button" aria-label="削除">×</button>`;
@@ -301,9 +346,9 @@ $('#list-rows').addEventListener('click', (ev) => {
   const li = ev.target.closest('.row');
   const e = li && entries.find((x) => x.id === li.dataset.id);
   if (!e) return;
-  if (ev.target.classList.contains('share')) {
+  if (ev.target.closest('.share')) {
     e.share = nextShare(e.share);
-  } else if (ev.target.classList.contains('del')) {
+  } else if (ev.target.closest('.del')) {
     if (!confirm(`「${e.item}」を削除しますか？`)) return;
     entries = entries.filter((x) => x.id !== e.id);
   } else return;
