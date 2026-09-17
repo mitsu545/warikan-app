@@ -1,0 +1,63 @@
+/* スマホ前提。親指で押せる大きさ（最低 48px）を守る */
+:root {
+  --common: #e5e7eb; --me: #bfdbfe; --wife: #fbcfe8;
+  --primary: #2563eb; --danger: #dc2626; --text: #111827;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 16px; max-width: 480px; margin-inline: auto;
+  font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  color: var(--text); background: #fff; font-size: 16px;
+}
+h1 { text-align: center; margin: 8px 0 16px; }
+h2 { font-size: 18px; margin: 0; }
+.bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.bar button { padding: 8px 12px; }
+
+button, .big, .chip {
+  min-height: 48px; padding: 8px 16px; border-radius: 10px; border: 1px solid #d1d5db;
+  background: #f9fafb; font-size: 16px; cursor: pointer; color: var(--text);
+}
+.big {
+  display: block; width: 100%; min-height: 72px; font-size: 22px; font-weight: bold;
+  margin: 12px 0; text-align: center; line-height: 54px;
+}
+.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.danger { color: var(--danger); border-color: var(--danger); margin-top: 24px; }
+.sub { display: flex; gap: 12px; }
+.sub button { flex: 1; }
+
+.settle { font-size: 20px; font-weight: bold; text-align: center; padding: 12px; background: #f3f4f6; border-radius: 10px; }
+.notice { background: #fef3c7; padding: 12px; border-radius: 10px; }
+.hint { color: #6b7280; font-size: 14px; }
+
+input[type="text"], input[type="number"], input[type="date"] {
+  min-height: 44px; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 16px; width: 100%;
+}
+label { display: block; margin: 8px 0; }
+.head { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.head .total { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin: 0; }
+.head .total input { width: 120px; }
+#thumb { width: 100%; max-height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; }
+.chips { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+
+/* 明細の行。区分ごとに背景色（灰・青・桃） */
+ul { list-style: none; padding: 0; margin: 0; }
+.row {
+  display: grid; grid-template-columns: 1fr 80px 72px 40px; gap: 6px; align-items: center;
+  padding: 6px; margin-bottom: 6px; border-radius: 10px; background: var(--common);
+}
+.row.me { background: var(--me); }
+.row.wife { background: var(--wife); }
+.row input { background: rgba(255,255,255,.7); }
+.row .amt { text-align: right; }
+.row .share { padding: 0 4px; font-weight: bold; background: rgba(255,255,255,.8); }
+.row .del { padding: 0; background: transparent; border: none; font-size: 20px; color: #6b7280; }
+.row .meta { font-size: 13px; color: #374151; }
+.row.adjust { opacity: .8; }
+
+#toast {
+  position: fixed; left: 16px; right: 16px; bottom: 24px; padding: 16px;
+  background: #111827; color: #fff; border-radius: 12px; font-size: 18px; text-align: center;
+}
+[hidden] { display: none !important; }

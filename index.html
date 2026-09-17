@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#2563eb">
+  <title>warikan</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ① ホーム -->
+<section id="view-home" class="view">
+  <h1>warikan</h1>
+  <p class="settle" id="home-settle">今月の精算：—</p>
+  <p class="notice" id="home-draft" hidden>
+    未送信のレシートがあります <button data-nav="review">確認へ</button>
+  </p>
+  <!-- capture="environment" で背面カメラを直接開く -->
+  <label class="big primary">📷 レシートを撮る
+    <input type="file" id="camera" accept="image/*" capture="environment" hidden>
+  </label>
+  <button class="big" data-nav="manual">✏️ 金額だけ入力</button>
+  <div class="sub">
+    <button data-nav="list">今月の一覧</button>
+    <button data-nav="settings">設定</button>
+  </div>
+</section>
+
+<!-- ② 確認・仕訳 -->
+<section id="view-review" class="view" hidden>
+  <header class="bar"><button data-nav="home">← 戻る</button><h2>確認・仕訳</h2></header>
+  <img id="thumb" alt="" hidden>
+  <div class="head">
+    <input type="date" id="r-date">
+    <input type="text" id="r-store" placeholder="店名">
+    <button id="r-payer" class="chip">支払: 私</button>
+    <label class="total">合計 <input type="number" id="r-total" inputmode="numeric"> 円</label>
+  </div>
+  <p class="hint">区分をタップ：共通 → 私 → 妻 と切り替わります</p>
+  <ul id="rows"></ul>
+  <button id="add-row">＋ 行を追加</button>
+  <button id="send" class="big primary">送る</button>
+</section>
+
+<!-- ②' 金額だけ入力 -->
+<section id="view-manual" class="view" hidden>
+  <header class="bar"><button data-nav="home">← 戻る</button><h2>金額だけ入力</h2></header>
+  <label>金額 <input type="number" id="m-amount" inputmode="numeric" placeholder="例：1200"> 円</label>
+  <label>メモ <input type="text" id="m-memo" placeholder="例：ランチ立て替え"></label>
+  <label>日付 <input type="date" id="m-date"></label>
+  <div class="chips">
+    区分：<button id="m-share" class="chip">共通</button>
+    支払：<button id="m-payer" class="chip">私</button>
+  </div>
+  <button id="m-send" class="big primary">送る</button>
+</section>
+
+<!-- ③ 今月の一覧 -->
+<section id="view-list" class="view" hidden>
+  <header class="bar"><button data-nav="home">← 戻る</button><h2>今月の一覧</h2></header>
+  <p class="settle" id="list-settle"></p>
+  <p class="hint">区分をタップで修正。× で削除</p>
+  <ul id="list-rows"></ul>
+</section>
+
+<!-- ⑤ 設定（v1-1 では 私/妻 の選択のみ） -->
+<section id="view-settings" class="view" hidden>
+  <header class="bar"><button data-nav="home">← 戻る</button><h2>設定</h2></header>
+  <p>このスマホの持ち主</p>
+  <div class="chips">
+    <label><input type="radio" name="owner" value="me"> 私</label>
+    <label><input type="radio" name="owner" value="wife"> 妻</label>
+  </div>
+  <p class="hint">GAS URL・合言葉・固定費・ルールは次の段階で追加</p>
+  <button id="clear-all" class="danger">端末内のデータを全部消す</button>
+</section>
+
+<div id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
