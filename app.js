@@ -5,7 +5,10 @@
 const SHARES = ['common', 'me', 'wife'];                 // タップで回る順
 const SHARE_LABEL = { common: '共通', me: '私', wife: '妻' };
 const PERSON_LABEL = { me: '私', wife: '妻' };
-const LS = { settings: 'warikan.settings', entries: 'warikan.entries', draft: 'warikan.draft' };
+const LS = {
+  settings: 'warikan.settings', entries: 'warikan.entries', draft: 'warikan.draft',
+  fixed: 'warikan.fixed', closes: 'warikan.closes',
+};
 
 // ===== 端末内の保存（localStorage）=====
 const store = {
@@ -17,6 +20,9 @@ const store = {
 let settings = store.get(LS.settings, { owner: 'me' });   // このスマホの持ち主
 let entries = store.get(LS.entries, []);                  // 送信済みの明細（仕様書 7 章の列）
 let draft = store.get(LS.draft, null);                    // 確認中のレシート（未送信）
+let fixedCosts = store.get(LS.fixed, []);                 // 固定費（家賃・光熱費・サブスク）
+let closes = store.get(LS.closes, {});                    // 締めた月の記録（月をキーにする）
+let viewMonth = null;                                     // 明細・締めで見ている月
 
 // ===== 小道具 =====
 const $ = (sel) => document.querySelector(sel);
@@ -40,23 +46,29 @@ function toast(msg) {
 
 // ===== 精算の計算（仕様書 6 章）=====
 // 自分の負担（共通の月合計÷2 切り捨て ＋ 自分専用分）− 自分が払った額 ＝ 相手に渡す額
-function settlement(month) {
+function calc(rows) {
   const paid = { me: 0, wife: 0 }, own = { me: 0, wife: 0 };
   let common = 0;
-  for (const e of entries.filter((e) => e.month === month)) {
-    paid[e.payer] += e.amount;
-    if (e.share === 'common') common += e.amount; else own[e.share] += e.amount;
+  for (const r of rows) {
+    paid[r.payer] += r.amount;
+    if (r.share === 'common') common += r.amount; else own[r.share] += r.amount;
   }
-  const half = Math.floor(common / 2);
+  const half = Math.floor(common / 2);   // 端数は切り捨て（月合計で1回だけ）
   const burden = { me: half + own.me, wife: half + own.wife };
-  const diff = burden.me - paid.me;   // 正なら私 → 妻、負なら妻 → 私
-  return { paid, burden, amount: Math.abs(diff), direction: diff > 0 ? 'me_to_wife' : diff < 0 ? 'wife_to_me' : 'none' };
+  const diff = burden.me - paid.me;      // 正なら私 → 妻、負なら妻 → 私
+  return { paid, own, burden, common, half,
+    amount: Math.abs(diff), direction: diff > 0 ? 'me_to_wife' : diff < 0 ? 'wife_to_me' : 'none' };
 }
+const monthEntries = (month) => entries.filter((e) => e.month === month);
+const activeFixed = () => fixedCosts.filter((f) => f.active && f.amount);
+// ホームと一覧はレシート分だけ。固定費は「締める」時に足す（仕様書 5-4）
+const settlement = (month) => calc(monthEntries(month));
 function settleText(month) {
   const s = settlement(month);
-  if (s.direction === 'none') return '今月の精算：0円（貸し借りなし）';
+  const head = month === thisMonth() ? '今月の精算' : `${monthLabel(month)}の精算`;
+  if (s.direction === 'none') return `${head}：0円（貸し借りなし）`;
   const [from, to] = s.direction === 'me_to_wife' ? ['私', '妻'] : ['妻', '私'];
-  return `今月の精算：${from} → ${to} ${yen(s.amount)}`;
+  return `${head}：${from} → ${to} ${yen(s.amount)}`;
 }
 
 // ===== 画面切替 =====
@@ -72,6 +84,7 @@ function show(view) {
   if (view === 'review') renderReview();
   if (view === 'manual') renderManual();
   if (view === 'list') renderList();
+  if (view === 'close') renderClose();
   if (view === 'settings') renderSettings();
   window.scrollTo(0, 0);
 }
@@ -81,6 +94,16 @@ document.addEventListener('click', (ev) => {
 });
 
 // ===== ① ホーム =====
+function shiftMonth(month, delta) {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+function flowHTML(direction) {
+  if (direction === 'none') return '<span class="flow-none">貸し借りなし</span>';
+  const [from, to] = direction === 'me_to_wife' ? ['me', 'wife'] : ['wife', 'me'];
+  return `<span class="who ${from}">${PERSON_LABEL[from]}</span><span class="arrow">→</span><span class="who ${to}">${PERSON_LABEL[to]}</span>`;
+}
 function monthLabel(month) {
   const [y, m] = month.split('-');
   return `${y}年${Number(m)}月`;
@@ -89,13 +112,8 @@ function renderHome() {
   const s = settlement(thisMonth());
   $('#home-month').textContent = monthLabel(thisMonth());
   $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
-  const flow = $('#home-flow');
-  if (s.direction === 'none') {
-    flow.innerHTML = '<span class="flow-none">貸し借りなし</span>';
-  } else {
-    const [from, to] = s.direction === 'me_to_wife' ? ['me', 'wife'] : ['wife', 'me'];
-    flow.innerHTML = `<span class="who ${from}">${PERSON_LABEL[from]}</span><span class="arrow">→</span><span class="who ${to}">${PERSON_LABEL[to]}</span>`;
-  }
+  $('#home-flow').innerHTML = flowHTML(s.direction);
+  $('#home-fixed-note').hidden = activeFixed().length === 0;
   $('#home-draft').hidden = !draft;
 }
 
@@ -285,6 +303,7 @@ $('#send').addEventListener('click', () => {
   }));
   store.set(LS.entries, entries);
   const month = draft.date.slice(0, 7);
+  viewMonth = month;
   draft = null;
   saveDraft();
   show('home');
@@ -317,19 +336,21 @@ $('#m-send').addEventListener('click', () => {
     created_at: fmtDateTime(new Date()), month: date.slice(0, 7),
   });
   store.set(LS.entries, entries);
+  viewMonth = date.slice(0, 7);
   show('home');
   toast(settleText(date.slice(0, 7)));
 });
 
 // ===== ③ 今月の一覧 =====
 function renderList() {
-  const month = thisMonth();
+  const month = viewMonth || (viewMonth = thisMonth());
   $('#list-month').textContent = monthLabel(month);
   $('#list-settle').textContent = settleText(month);
+  $('#next-month').disabled = month >= thisMonth();      // 未来の月は見ない
   const ul = $('#list-rows');
   ul.innerHTML = '';
-  const rows = entries.filter((e) => e.month === month).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  if (rows.length === 0) { ul.innerHTML = '<li class="hint">まだ明細がありません</li>'; return; }
+  const rows = monthEntries(month).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  if (rows.length === 0) { ul.innerHTML = '<li class="hint">この月の明細はまだありません</li>'; return; }
   rows.forEach((e) => {
     const li = document.createElement('li');
     li.className = `row ${e.share}`;
@@ -356,19 +377,136 @@ $('#list-rows').addEventListener('click', (ev) => {
   renderList();
 });
 
+$('#prev-month').addEventListener('click', () => { viewMonth = shiftMonth(viewMonth, -1); renderList(); });
+$('#next-month').addEventListener('click', () => { viewMonth = shiftMonth(viewMonth, 1); renderList(); });
+$('#go-close').addEventListener('click', () => show('close'));
+
+// ===== ④ 月末締め =====
+function renderClose() {
+  const month = viewMonth || (viewMonth = thisMonth());
+  const ents = monthEntries(month);
+  const fx = activeFixed();
+  const s = calc([...ents, ...fx]);                       // 締めはレシート＋固定費
+  const rec = closes[month];
+
+  $('#close-month').textContent = `${monthLabel(month)}の精算`;
+  $('#close-amount').textContent = s.amount.toLocaleString('ja-JP');
+  $('#close-flow').innerHTML = flowHTML(s.direction);
+
+  // 何を合計したか
+  const sum = (rows) => rows.reduce((t, r) => t + r.amount, 0);
+  $('#close-parts').innerHTML = `
+    <tr><td>レシートの明細</td><td>${ents.length}件</td><td>${yen(sum(ents))}</td></tr>
+    <tr><td>固定費</td><td>${fx.length}件</td><td>${yen(sum(fx))}</td></tr>
+    <tr class="total"><td>合計</td><td></td><td>${yen(sum(ents) + sum(fx))}</td></tr>`;
+
+  // 計算の内訳
+  const d = { me: s.burden.me - s.paid.me, wife: s.burden.wife - s.paid.wife };
+  const cell = (v) => `<td class="${v > 0 ? 'pay' : v < 0 ? 'get' : ''}">${v > 0 ? '+' : ''}${yen(v)}</td>`;
+  $('#close-table').innerHTML = `
+    <thead><tr><th></th><th>私</th><th>妻</th></tr></thead>
+    <tbody>
+      <tr><td>払った額</td><td>${yen(s.paid.me)}</td><td>${yen(s.paid.wife)}</td></tr>
+      <tr><td>負担する額</td><td>${yen(s.burden.me)}</td><td>${yen(s.burden.wife)}</td></tr>
+      <tr class="diff"><td>差額</td>${cell(d.me)}${cell(d.wife)}</tr>
+    </tbody>`;
+  const odd = s.common % 2 === 1;
+  $('#close-note').innerHTML = `共通の合計 ${yen(s.common)} を半分にして 1人 ${yen(s.half)}。`
+    + (odd ? '<br>共通が奇数のため、1円は精算しません（切り捨て）。' : '')
+    + '<br>プラスは渡す側、マイナスは受け取る側です。';
+
+  // 締め済みかどうか
+  $('#close-done').hidden = !rec;
+  if (rec) $('#close-done-txt').textContent = `${rec.closed_at} に締めました`;
+  $('#do-close').innerHTML = rec
+    ? '<svg class="ico"><use href="#i-lock"/></svg>締め直す'
+    : '<svg class="ico"><use href="#i-lock"/></svg>この月を締める';
+}
+
+$('#do-close').addEventListener('click', () => {
+  const month = viewMonth;
+  const s = calc([...monthEntries(month), ...activeFixed()]);
+  const again = Boolean(closes[month]);
+  if (again && !confirm(`${monthLabel(month)} は締め済みです。今の明細で締め直しますか？`)) return;
+  closes[month] = {
+    month,
+    paid_me: s.paid.me, paid_wife: s.paid.wife,
+    burden_me: s.burden.me, burden_wife: s.burden.wife,
+    settle_amount: s.amount, settle_direction: s.direction,
+    closed_at: fmtDateTime(new Date()),
+  };
+  store.set(LS.closes, closes);
+  renderClose();
+  toast(again ? `${monthLabel(month)} を締め直しました` : `${monthLabel(month)} を締めました`);
+});
+
 // ===== ⑤ 設定 =====
 function renderSettings() {
   document.querySelectorAll('input[name="owner"]').forEach((r) => { r.checked = r.value === settings.owner; });
+  renderFixed();
 }
+
+// 固定費の一覧。行は明細と同じ見た目（品名・金額・支払者・区分）
+function renderFixed() {
+  const ul = $('#fixed-rows');
+  ul.innerHTML = '';
+  if (fixedCosts.length === 0) {
+    ul.innerHTML = '<li class="hint">まだ登録がありません。下の「固定費を追加」から家賃や光熱費を入れてください</li>';
+    return;
+  }
+  fixedCosts.forEach((f, idx) => {
+    const li = document.createElement('li');
+    li.className = `row ${f.share}${f.active ? '' : ' off'}`;
+    li.dataset.idx = idx;
+    li.innerHTML = `
+      <input class="name" type="text" value="${esc(f.name)}" placeholder="例：家賃">
+      <div class="ctrl">
+        <input class="amt" type="number" inputmode="numeric" value="${f.amount}">
+        <span class="cur">円</span>
+        <button class="payer" type="button">${PERSON_LABEL[f.payer]}</button>
+        <button class="share" type="button">${SHARE_LABEL[f.share]}</button>
+        <button class="del" type="button" aria-label="削除">×</button>
+      </div>`;
+    ul.appendChild(li);
+  });
+}
+
+$('#fixed-rows').addEventListener('click', (ev) => {
+  const li = ev.target.closest('.row');
+  const f = li && fixedCosts[li.dataset.idx];
+  if (!f) return;
+  if (ev.target.closest('.share')) f.share = nextShare(f.share);
+  else if (ev.target.closest('.payer')) f.payer = otherPerson(f.payer);
+  else if (ev.target.closest('.del')) {
+    if (!confirm(`「${f.name || '名前なし'}」を削除しますか？`)) return;
+    fixedCosts.splice(li.dataset.idx, 1);
+  } else return;
+  store.set(LS.fixed, fixedCosts);
+  renderFixed();
+});
+$('#fixed-rows').addEventListener('change', (ev) => {
+  const li = ev.target.closest('.row');
+  const f = li && fixedCosts[li.dataset.idx];
+  if (!f) return;
+  if (ev.target.classList.contains('name')) f.name = ev.target.value.trim();
+  if (ev.target.classList.contains('amt')) f.amount = Number(ev.target.value) || 0;
+  store.set(LS.fixed, fixedCosts);
+});
+$('#add-fixed').addEventListener('click', () => {
+  fixedCosts.push({ name: '', amount: 0, payer: settings.owner, share: 'common', active: true });
+  store.set(LS.fixed, fixedCosts);
+  renderFixed();
+  $('#fixed-rows .row:last-of-type .name')?.focus();
+});
 document.querySelectorAll('input[name="owner"]').forEach((r) => r.addEventListener('change', (ev) => {
   settings.owner = ev.target.value;
   store.set(LS.settings, settings);
   toast(`このスマホは「${PERSON_LABEL[settings.owner]}」に設定しました`);
 }));
 $('#clear-all').addEventListener('click', () => {
-  if (!confirm('端末内の明細・下書きを全部消します。よろしいですか？')) return;
-  entries = []; draft = null;
-  store.set(LS.entries, entries); saveDraft();
+  if (!confirm('端末内の明細・固定費・締めの記録を全部消します。よろしいですか？')) return;
+  entries = []; draft = null; fixedCosts = []; closes = {};
+  store.set(LS.entries, entries); store.set(LS.fixed, fixedCosts); store.set(LS.closes, closes); saveDraft();
   show('home');
   toast('消しました');
 });

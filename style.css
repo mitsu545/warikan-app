@@ -16,6 +16,8 @@
   --tint-common: #e6e9f1;
   --tint-me: #e2eafc;
   --tint-wife: #fbe4ef;
+  --line: rgba(43,50,68,.12);
+  --ok: #1a9f6b;
   --radius: 20px;
   --sh-up: 6px 6px 14px var(--sd), -6px -6px 14px var(--sl);
   --sh-up-sm: 3px 3px 8px var(--sd), -3px -3px 8px var(--sl);
@@ -40,6 +42,8 @@
     --tint-common: #2a2e38;
     --tint-me: #262d3f;
     --tint-wife: #322833;
+    --line: rgba(231,234,242,.14);
+    --ok: #48d39a;
   }
 }
 
@@ -182,11 +186,12 @@ input::placeholder { color: var(--muted); opacity: .7; }
   animation: rowIn .22s ease both;
 }
 /* 確認・仕訳：品名が切れないよう2段にする（1段目=品名、2段目=金額・区分・削除） */
-#rows .row { display: grid; gap: 8px; }
-#rows .ctrl { display: flex; align-items: center; gap: 8px; }
-#rows .amt { flex: 1; min-width: 0; }
-#rows .cur { font-size: 13px; font-weight: 700; color: var(--muted); flex: none; }
-#rows .share { width: 84px; flex: none; }
+.rows-stacked .row { display: grid; gap: 8px; }
+.rows-stacked .ctrl { display: flex; align-items: center; gap: 8px; }
+.rows-stacked .amt { flex: 1; min-width: 0; }
+.rows-stacked .cur { font-size: 13px; font-weight: 700; color: var(--muted); flex: none; }
+.rows-stacked .share { width: 84px; flex: none; }
+.rows-stacked .payer { width: 56px; flex: none; }
 /* 一覧：品名＋日付店名を左に、金額・区分・削除を右に */
 #list-rows .row { display: grid; grid-template-columns: 1fr 84px 62px 44px; gap: 8px; align-items: center; }
 .row.me { background: var(--tint-me); border-left-color: var(--me); }
@@ -289,3 +294,35 @@ input::placeholder { color: var(--muted); opacity: .7; }
 @media (prefers-reduced-motion: reduce) {
   *, .view, .row, #toast { animation: none !important; transition: none !important; }
 }
+
+
+/* ---- 月の切替 ---- */
+.monthnav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.monthnav span { font-size: 17px; font-weight: 700; }
+.monthnav button {
+  width: 46px; height: 46px; display: grid; place-items: center;
+  border-radius: 15px; box-shadow: var(--sh-up-sm); color: var(--text);
+}
+.monthnav button:active { box-shadow: var(--sh-in-sm); }
+.monthnav button:disabled { opacity: .35; box-shadow: none; }
+.ico.flip { transform: rotate(180deg); }
+.hint.center { text-align: center; margin-top: -6px; }
+
+/* ---- 締めの計算表 ---- */
+.calc { width: 100%; border-collapse: collapse; font-size: 14px; }
+.calc th, .calc td { padding: 9px 2px; text-align: right; border-bottom: 1px solid var(--line); }
+.calc th { font-size: 12px; color: var(--muted); font-weight: 700; }
+.calc th:first-child, .calc td:first-child { text-align: left; color: var(--muted); font-weight: 600; }
+.calc tr:last-child th, .calc tr:last-child td { border-bottom: 0; }
+.calc .total td, .calc .total td:first-child { font-weight: 800; color: var(--text); }
+.calc .diff td { font-weight: 700; }
+.calc .pay { color: var(--danger); }
+.calc .get { color: var(--me); }
+
+/* ---- 締め済みの表示 ---- */
+.notice.done { color: var(--ok); }
+.notice.done .ico { width: 20px; }
+.notice.done span { font-weight: 700; font-size: 14px; }
+
+/* 固定費：OFF にした行（v1 では削除のみ。将来のトグル用） */
+.row.off { opacity: .45; }

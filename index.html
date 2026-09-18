@@ -21,6 +21,8 @@
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.5 12 20 4.6l-3.1 15.2-4.6-4.2z"/><path d="M12.3 15.6 9 19v-4.4L20 4.6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10.2" width="16" height="9.8" rx="2.3"/><path d="M8.2 10.2V7.6a3.8 3.8 0 0 1 7.6 0v2.6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7"/></symbol>
 </svg>
 
 <!-- ① ホーム -->
@@ -35,6 +37,7 @@
     <p class="hero-amount"><span id="home-amount">0</span><span class="unit">円</span></p>
     <div class="hero-flow" id="home-flow"></div>
   </div>
+  <p class="hint center" id="home-fixed-note" hidden>固定費は月末の「締める」で加算されます</p>
 
   <button class="notice" id="home-draft" data-nav="review" hidden>
     <span class="notice-dot"></span>
@@ -92,7 +95,7 @@
   </div>
 
   <p class="hint">区分をタップ：共通 → 私 → 妻 と切り替わります</p>
-  <ul id="rows" class="rows"></ul>
+  <ul id="rows" class="rows rows-stacked"></ul>
 
   <button id="add-row" class="ghost"><svg class="ico"><use href="#i-plus"/></svg>行を追加</button>
 
@@ -125,20 +128,64 @@
   </div>
 </section>
 
-<!-- ③ 今月の一覧 -->
+<!-- ③ 明細の一覧（月を切り替えられる） -->
 <section id="view-list" class="view" hidden>
-  <header class="apphead">
-    <h1 class="logo">今月の一覧</h1>
-    <span class="month" id="list-month"></span>
-  </header>
+  <header class="apphead"><h1 class="logo">明細</h1></header>
+
+  <div class="monthnav">
+    <button type="button" id="prev-month" aria-label="前の月"><svg class="ico"><use href="#i-back"/></svg></button>
+    <span id="list-month"></span>
+    <button type="button" id="next-month" aria-label="次の月"><svg class="ico flip"><use href="#i-back"/></svg></button>
+  </div>
+
   <div class="mini raised" id="list-settle"></div>
   <p class="hint">区分をタップで修正。× で削除</p>
   <ul id="list-rows" class="rows"></ul>
+
+  <button id="go-close" class="action">
+    <svg class="ico"><use href="#i-lock"/></svg>
+    <span class="action-txt">この月を締める<small>固定費を足して精算額を確定</small></span>
+  </button>
+</section>
+
+<!-- ④ 月末締め -->
+<section id="view-close" class="view" hidden>
+  <header class="subhead">
+    <button class="iconbtn" data-nav="list" aria-label="戻る"><svg class="ico"><use href="#i-back"/></svg></button>
+    <h2>月末締め</h2>
+  </header>
+
+  <div class="hero raised">
+    <p class="hero-label" id="close-month"></p>
+    <p class="hero-amount"><span id="close-amount">0</span><span class="unit">円</span></p>
+    <div class="hero-flow" id="close-flow"></div>
+  </div>
+
+  <div class="notice done" id="close-done" hidden>
+    <svg class="ico"><use href="#i-check"/></svg>
+    <span id="close-done-txt"></span>
+  </div>
+
+  <div class="card">
+    <p class="field-title">何を合計したか</p>
+    <table class="calc"><tbody id="close-parts"></tbody></table>
+  </div>
+
+  <div class="card">
+    <p class="field-title">計算の内訳</p>
+    <table class="calc" id="close-table"></table>
+    <p class="hint" id="close-note"></p>
+  </div>
+
+  <div class="actionbar">
+    <button id="do-close" class="submit"><svg class="ico"><use href="#i-lock"/></svg>この月を締める</button>
+  </div>
 </section>
 
 <!-- ⑤ 設定 -->
 <section id="view-settings" class="view" hidden>
   <header class="apphead"><h1 class="logo">設定</h1></header>
+
   <div class="card">
     <p class="field-title">このスマホの持ち主</p>
     <div class="segmented">
@@ -147,17 +194,26 @@
     </div>
     <p class="hint">入力した明細の「入力者」と、支払者の初期値に使います</p>
   </div>
+
+  <div class="card">
+    <p class="field-title">固定費（毎月かかるお金）</p>
+    <p class="hint">家賃・光熱費・サブスクなど。月末に「締める」を押した時に自動で足されます</p>
+    <ul id="fixed-rows" class="rows rows-stacked"></ul>
+    <button id="add-fixed" class="ghost"><svg class="ico"><use href="#i-plus"/></svg>固定費を追加</button>
+  </div>
+
   <div class="card">
     <p class="field-title">これから作るもの</p>
-    <p class="hint">GAS の URL・合言葉・固定費・ルールの編集は次の段階で追加します</p>
+    <p class="hint">GAS の URL・合言葉・仕訳ルールの編集は次の段階で追加します</p>
   </div>
+
   <button id="clear-all" class="danger">端末内のデータを全部消す</button>
 </section>
 
 <!-- 下部タブバー -->
 <nav class="tabbar" id="tabbar">
   <button data-nav="home" data-tab="home"><svg class="ico"><use href="#i-home"/></svg><span>ホーム</span></button>
-  <button data-nav="list" data-tab="list"><svg class="ico"><use href="#i-list"/></svg><span>一覧</span></button>
+  <button data-nav="list" data-tab="list"><svg class="ico"><use href="#i-list"/></svg><span>明細</span></button>
   <button data-nav="settings" data-tab="settings"><svg class="ico"><use href="#i-cog"/></svg><span>設定</span></button>
 </nav>
 
