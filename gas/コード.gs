@@ -83,6 +83,7 @@ function doPost(e) {
       case 'summary': return json(actionSummary(req));
       case 'receipt': return json(actionReceipt(req));
       case 'photo':   return json(actionPhoto(req));
+      case 'ocr':     return json(actionOcr(req));
       default:        return json({ ok: false, error: '知らない action です：' + req.action });
     }
   } catch (err) {
@@ -259,6 +260,105 @@ function actionPhoto(req) {
   } catch (e) {
     return { ok: true, photo: '', reason: '期限切れ' };   // 自動削除済み
   }
+}
+
+// ===== レシートの読み取り（Gemini・段階3） =====
+// 写真を Gemini に渡して 店名・日付・合計・品目 を読ませる。
+// API キーはスクリプトプロパティ GEMINI_KEY にだけ置く。コードには書かない。
+
+function geminiModel() { return prop('GEMINI_MODEL') || 'gemini-2.0-flash'; }
+
+var OCR_PROMPT = [
+  'これは日本のレシートの写真です。書かれている内容だけを読み取ってください。',
+  '推測で補わないでください。読めない項目は空にしてください。',
+  '次の形の JSON だけを返してください。説明文は不要です。',
+  '{"store":"店名","date":"YYYY-MM-DD","total":合計金額の数値,',
+  ' "items":[{"item":"品名","amount":金額の数値}]}',
+  '注意：',
+  '- 金額は数値のみ（円やカンマを付けない）。値引きはマイナスの数値にする。',
+  '- total はレシートに印字された「合計」の金額。税込の支払額。',
+  '- items には商品の行だけを入れる。小計・税・合計・お預り・お釣りは入れない。',
+  '- 日付が読めないときは date を空文字にする。'
+].join('\n');
+
+function actionOcr(req) {
+  var key = prop('GEMINI_KEY');
+  if (!key) return { ok: false, error: 'GEMINI_KEY が未設定です（スクリプトプロパティに登録してください）' };
+
+  var m = String(req.photo || '').match(/^data:(image\/[a-z]+);base64,(.+)$/i);
+  if (!m) return { ok: false, error: '写真がありません' };
+
+  var body = {
+    contents: [{ parts: [
+      { text: OCR_PROMPT },
+      { inline_data: { mime_type: m[1], data: m[2] } }
+    ] }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+  };
+
+  // キーは URL ではなくヘッダーで渡す（エラーの文面に混ざって画面に出るのを防ぐ）
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/'
+          + geminiModel() + ':generateContent';
+  var res;
+  try {
+    res = UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'application/json',
+      headers: { 'x-goog-api-key': key },
+      payload: JSON.stringify(body), muteHttpExceptions: true
+    });
+  } catch (e) {
+    // e.message には URL が含まれることがあるため、そのままは返さない
+    return { ok: false, error: '読み取りに行けませんでした。通信を確認してください' };
+  }
+
+  var code = res.getResponseCode();
+  if (code === 429) return { ok: false, error: '無料枠の上限に達しました。少し待って試してください' };
+  if (code !== 200) return { ok: false, error: '読み取りが失敗しました（' + code + '）' };
+
+  var text;
+  try {
+    var out = JSON.parse(res.getContentText());
+    text = out.candidates[0].content.parts[0].text;
+  } catch (e) {
+    return { ok: false, error: '読み取りの返事が読めませんでした' };
+  }
+  return { ok: true, read: normalizeOcr(text) };
+}
+
+// Gemini の返事を、アプリがそのまま使える形に整える。
+// おかしな値はここで落とす（金額の取り違えは事故になるため）
+function normalizeOcr(text) {
+  var o;
+  try { o = JSON.parse(String(text).replace(/^```(json)?|```$/g, '').trim()); }
+  catch (e) { return { store: '', date: '', total: 0, items: [] }; }
+
+  var items = [];
+  (o.items || []).forEach(function (x) {
+    var name = String(x && x.item != null ? x.item : '').trim().slice(0, 60);
+    var amt = num(x && x.amount);
+    if (!name && !amt) return;
+    if (Math.abs(amt) > 10000000) return;              // 桁の読み違いは捨てる
+    items.push({ item: name || '（品名なし）', amount: Math.round(amt) });
+  });
+
+  var total = Math.round(num(o.total));
+  if (total < 0 || total > 10000000) total = 0;
+
+  var date = String(o.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = '';   // 形が違えば使わない
+  if (date) {                                          // 実在しない日付も使わない
+    var p = date.split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    if (d.getFullYear() !== Number(p[0]) || d.getMonth() + 1 !== Number(p[1])
+        || d.getDate() !== Number(p[2])) date = '';
+  }
+
+  return { store: String(o.store || '').trim().slice(0, 60), date: date, total: total, items: items };
+}
+
+// 読み取りを試すとき用（エディタから実行する）
+function テスト読み取り() {
+  Logger.log(geminiModel() + ' / キー登録：' + (prop('GEMINI_KEY') ? 'あり' : 'なし'));
 }
 
 // ===== 写真の自動削除（1日1回） =====

@@ -48,12 +48,12 @@
 
   <label class="action primary">
     <svg class="ico"><use href="#i-camera"/></svg>
-    <span class="action-txt">レシートを撮る<small>カメラが開きます。写真は保存されます</small></span>
+    <span class="action-txt">レシートを撮る<small>撮るとAIが店名と金額を読み取ります</small></span>
     <input type="file" id="camera" accept="image/*" capture="environment" hidden>
   </label>
   <button class="action" data-go="review" data-mode="items">
     <svg class="ico"><use href="#i-list"/></svg>
-    <span class="action-txt">見本の明細で試す<small>品目の読み取りは段階3。動きの確認用</small></span>
+    <span class="action-txt">見本の明細で試す<small>動きを確かめるための練習用</small></span>
   </button>
   <button class="action" data-go="manual">
     <svg class="ico"><use href="#i-pen"/></svg>
@@ -64,7 +64,7 @@
 <!-- ② 確認・仕訳 -->
 <section id="v-review" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>確認・仕訳</h2></header>
-  <p class="purpose">品目ごとに<b>誰の分か</b>を決める場所です。ボタンを押すと 共通 → 私 → 妻 と変わります。</p>
+  <p class="purpose"><b>AI の読み取りを確かめて直す</b>場所です。品目ごとに 共通 → 私 → 妻 をタップで選べます。</p>
 
   <div class="notice" id="noitems-banner" hidden>
     <span class="notice-dot"></span>
@@ -77,7 +77,7 @@
     <div class="field-grid">
       <label class="field"><span>日付</span><input type="date" id="r-date"></label>
       <label class="field"><span>店名</span><input type="text" id="r-store"></label>
-      <label class="field"><span>合計</span><input type="number" id="r-total" inputmode="numeric"></label>
+      <label class="field"><span>合計</span><input type="number" id="r-total" inputmode="numeric" placeholder="0"></label>
       <label class="field"><span>誰が払った？</span><button class="pill" id="r-payer" type="button">私</button></label>
     </div>
   </div>

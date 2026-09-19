@@ -225,18 +225,52 @@ $('#camera').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';                       // 同じ写真をもう一度選べるようにする
   if (!file) return;
+  let photo;
   try {
-    const photo = await shrink(file, 1200);
-    const today = new Date();
-    const d = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
-    draft = { date: d, store: '', payer: store.get(LS.owner, 'me'), total: 0,
-      hasItems: false, fromCamera: true, photo,
-      items: [{ n: 'お買い物', a: 0, s: 'common', c: 'その他' }] };
-    go('review');
+    photo = await shrink(file, 1200);
   } catch (err) {
     alert(`写真を扱えませんでした。\n${err.message}`);
+    return;
   }
+  const today = new Date();
+  const d = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  draft = { date: d, store: '', payer: store.get(LS.owner, 'me'), total: 0,
+    hasItems: false, fromCamera: true, photo, ocr: 'reading', edited: {},
+    items: [{ n: 'お買い物', a: 0, s: 'common', c: 'その他' }] };
+  go('review');
+  readReceipt(photo);                        // 読み取りは画面を出してから裏で進める
 });
+
+// ===== 写真から店名・日付・合計・品目を読む（段階3・Gemini）=====
+// 読み取れても必ず人が確かめてから送る。失敗しても手入力で続けられる。
+async function readReceipt(photo) {
+  if (!API.ready()) { draft.ocr = 'off'; renderReview(); return; }
+  const mine = photo;                        // 途中で別の写真に変わったら捨てる
+  try {
+    const res = await API.call('ocr', { photo });
+    if (draft.photo !== mine) return;
+    const r = res.read || {};
+    const items = (r.items || []).filter((x) => x.amount);
+    const ed = draft.edited;                 // 人が先に打った欄は上書きしない
+    if (!ed.store && r.store) draft.store = r.store;
+    if (!ed.date && r.date) draft.date = r.date;
+    if (!ed.items && items.length) {
+      draft.hasItems = true;
+      draft.items = items.map((x) => ({ n: x.item, a: x.amount, s: 'common', c: 'その他' }));
+    }
+    // 合計が読めなくても品目が読めていればその合計を使う。
+    // 0 のままだと「調整（税・割引）」がマイナスで出てしまう
+    if (!ed.total) {
+      draft.total = r.total || draft.items.reduce((sum, x) => sum + (Number(x.a) || 0), 0);
+    }
+    draft.ocr = (draft.total || items.length) ? 'done' : 'empty';
+  } catch (err) {
+    if (draft.photo !== mine) return;
+    draft.ocr = 'fail';
+    draft.ocrError = err.message;
+  }
+  renderReview();
+}
 
 // ===== ② 確認・仕訳 =====
 let draft = null;
@@ -244,11 +278,11 @@ function makeDraft(mode) {
   const t = new Date();
   const today = `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
   if (mode === 'noitems') {
-    return { date: today, store: 'ドトール 三軒茶屋', payer: 'me', total: 880, hasItems: false,
+    return { edited: {}, date: today, store: 'ドトール 三軒茶屋', payer: 'me', total: 880, hasItems: false,
       photo: fakePhoto('ドトール 三軒茶屋'), items: [{ n: 'ドトール 三軒茶屋', a: 880, s: 'common', c: '外食' }] };
   }
   // 手元のレシートに頼らない（1枚も無い人でも押せるように）
-  return { date: today, store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, hasItems: true,
+  return { edited: {}, date: today, store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, hasItems: true,
     photo: fakePhoto('ライフ 三軒茶屋'),
     items: [
       { n: '牛乳 1L', a: 238, s: 'common', c: '食費' },
@@ -265,16 +299,28 @@ function draftRows() {
   if (gap !== 0) rows.push({ n: '調整（税・割引）', a: gap, s: 'common', c: '食費', adjust: true });
   return rows;
 }
+// いま打っている欄は書き換えない（読み取りの返事が届いても入力を邪魔しない）
+function setVal(sel, v) { const el = $(sel); if (el !== document.activeElement) el.value = v; }
+
+// 確認画面の上に出す案内。読み取りの進み具合で変える
+function reviewBanner() {
+  switch (draft.ocr) {
+    case 'reading': return 'レシートを読んでいます…<small>数秒かかります。そのまま待つか、自分で入力しても大丈夫です</small>';
+    case 'done':    return '読み取りました<small><b>金額と店名が合っているか必ず確かめてください。</b>間違っていればその場で直せます</small>';
+    case 'empty':   return '読み取れませんでした<small>写真は保存されます。合計と店名を入れてください</small>';
+    case 'fail':    return `読み取りに失敗しました<small>${esc(draft.ocrError || '')}。手で入力すれば登録できます</small>`;
+    case 'off':     return '設定がまだです<small>設定で GAS の URL と合言葉を入れると読み取りが使えます</small>';
+    default:        return draft.hasItems ? '' : '明細なしで登録します<small>合計だけの1行です。誰の分かを選んで送ってください</small>';
+  }
+}
 function renderReview() {
   if (!draft) draft = makeDraft('items');
-  $('#noitems-banner').hidden = draft.hasItems;
-  $('#noitems-txt').innerHTML = draft.fromCamera
-    ? '写真を保存します<small>合計と店名を入れて、誰の分かを選んでください。品目の読み取りは段階3です</small>'
-    : '明細が読み取れませんでした<small>合計だけで登録します。区分を選んで送るだけです</small>';
+  $('#noitems-banner').hidden = !reviewBanner();
+  $('#noitems-txt').innerHTML = reviewBanner() || '';
   $('#r-photo').src = draft.photo;
-  $('#r-date').value = draft.date;
-  $('#r-store').value = draft.store;
-  $('#r-total').value = draft.total;
+  setVal('#r-date', draft.date);
+  setVal('#r-store', draft.store);
+  setVal('#r-total', draft.total || '');
   $('#r-payer').textContent = PERSON[draft.payer];
   $('#add-row-txt').textContent = draft.hasItems ? '行を追加' : '分ける（行を足す）';
   drawRows();
@@ -313,6 +359,7 @@ $('#r-rows').addEventListener('click', (e) => {
 $('#r-rows').addEventListener('input', (e) => {
   const li = e.target.closest('.row'); const it = li && draft.items[li.dataset.i];
   if (!it) return;
+  draft.edited.items = true;
   if (e.target.classList.contains('name')) it.n = e.target.value;
   if (e.target.classList.contains('amt')) it.a = Number(e.target.value) || 0;
   syncAdjust();
@@ -335,9 +382,9 @@ $('#bulk').addEventListener('click', (e) => {
 $('#add-row').addEventListener('click', () => {
   draft.items.push({ n: '', a: 0, s: 'common', c: 'その他' }); drawRows();
 });
-$('#r-total').addEventListener('input', (e) => { draft.total = Number(e.target.value) || 0; drawRows(); });
-$('#r-store').addEventListener('input', (e) => { draft.store = e.target.value.trim(); });
-$('#r-date').addEventListener('input', (e) => { if (e.target.value) draft.date = e.target.value; });
+$('#r-total').addEventListener('input', (e) => { draft.edited.total = true; draft.total = Number(e.target.value) || 0; syncAdjust(); });
+$('#r-store').addEventListener('input', (e) => { draft.edited.store = true; draft.store = e.target.value.trim(); });
+$('#r-date').addEventListener('input',  (e) => { draft.edited.date = true; if (e.target.value) draft.date = e.target.value; });
 $('#r-payer').addEventListener('click', () => { draft.payer = other(draft.payer); $('#r-payer').textContent = PERSON[draft.payer]; });
 // 送る直前に画面の値をそのまま読み直す（イベントの取りこぼしに対する最後の砦）
 function syncDraft() {
