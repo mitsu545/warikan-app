@@ -23,9 +23,9 @@
 | 項目 | 内容 |
 |---|---|
 | 何を作るか | 夫婦の割り勘・精算アプリ。**詳細は `docs/spec.md` を必ず最初に読む** |
-| 技術スタック | HTML / CSS / JavaScript（フレームワークなし）＋ Google Apps Script ＋ Google スプレッドシート ＋ Gemini API（無料枠） |
+| 技術スタック | HTML / CSS / JavaScript（フレームワークなし）＋ Google Apps Script ＋ Google スプレッドシート ＋ Google ドライブ（レシート写真）＋ Gemini API（無料枠） |
 | AI | **Gemini を使う**（Claude API は使わない。完全無料が要件のため） |
 | 起動コマンド | なし。`index.html` をブラウザで開く。GAS 部分は `gas/` フォルダのコードを Apps Script エディタに貼る |
 | 公開先 | GitHub Pages（public リポ。無料アカウントの条件） |
 | 実行環境 | Windows で開発。iPhone / Android の Safari・Chrome で利用（夫婦2人） |
-| 秘密情報 | Gemini の API キーと合言葉は **GAS のスクリプトプロパティにだけ**置く。GAS の Web App URL と合言葉は各スマホの設定画面で入力して端末内（localStorage）に保存する。**コードや `.env` にも書かない** |
+| 秘密情報 | Gemini の API キーと合言葉は **GAS のスクリプトプロパティにだけ**置く。ドライブのフォルダは公開しない。GAS の Web App URL と合言葉は各スマホの設定画面で入力して端末内（localStorage）に保存する。**コードや `.env` にも書かない** |
