@@ -326,3 +326,8 @@ input::placeholder { color: var(--muted); opacity: .7; }
 
 /* 固定費：OFF にした行（v1 では削除のみ。将来のトグル用） */
 .row.off { opacity: .45; }
+
+/* 固定費は1行に要素が多いので、金額欄が6桁入るよう幅を配分し直す */
+#fixed-rows .ctrl { gap: 6px; }
+#fixed-rows .payer { width: 48px; }
+#fixed-rows .share { width: 66px; }
