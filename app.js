@@ -1,5 +1,6 @@
-/* warikan v2 デザインプロトタイプ
-   ダミーデータで画面と計算を確かめるためのもの。GAS にはつながっていない。 */
+/* warikan アプリ本体
+   設定に GAS の URL と合言葉が入っていれば本物のデータで動く。
+   入っていなければ見本データのまま動いて、画面の見え方だけ確かめられる。 */
 'use strict';
 
 // ===== 定数 =====
@@ -34,9 +35,14 @@ function fakePhoto(seed, w = 520, h = 340) {
   return c.toDataURL('image/jpeg', 0.7);
 }
 
-// ===== ダミーデータ（2026年9月・8月） =====
-const THIS_M = '2026-09', PREV_M = '2026-08';
+// ===== 今月・先月（今日の日付から毎回計算する）=====
+const ymOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+const TODAY = new Date();
+const THIS_M = ymOf(TODAY);
+const PREV_M = ymOf(new Date(TODAY.getFullYear(), TODAY.getMonth() - 1, 1));
 let month = THIS_M;
+
+// ===== 見本データ（GAS につながっていないときだけ使う）=====
 
 let receipts = [
   { id: 'r1', month: THIS_M, date: '2026-09-17', store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, photo: 1, hasItems: true, items: [
@@ -96,8 +102,8 @@ const LAST0 = { f2: 9120, f3: 5210, f4: 0 };      // 8月の実額（締め済�
 // その月の実額。月ごとに持つ（変動費は未入力＝null から始める）
 const blankMonth = () => templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : null }));
 const fxByMonth = {
-  '2026-09': blankMonth(),
-  '2026-08': templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : (LAST0[t.id] ?? 0) })),
+  [THIS_M]: blankMonth(),
+  [PREV_M]: templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : (LAST0[t.id] ?? 0) })),
 };
 const fxOf = (m) => (fxByMonth[m] ||= blankMonth());
 
@@ -154,13 +160,14 @@ function toast(msg) {
 
 // ===== 画面切替 =====
 const TABS = ['home', 'list', 'stats', 'settings'];
+// 下タブを持たない画面は、どのタブの中にいるかを示す（タブは常に出しておく）
+const PARENT = { review: 'home', manual: 'home', detail: 'list', close: 'list', settle: 'home' };
 const R = { home: renderHome, review: renderReview, manual: renderManual, list: renderList,
   detail: renderDetail, close: renderClose, stats: renderStats, settle: renderSettle, settings: renderSettings };
 function go(v) {
   document.querySelectorAll('.view').forEach((s) => { s.hidden = s.id !== `v-${v}`; });
-  const tab = TABS.includes(v);
-  $('#tabbar').hidden = !tab;
-  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === v));
+  const tab = TABS.includes(v) ? v : PARENT[v];
+  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
   R[v]?.();
   window.scrollTo(0, 0);
 }
@@ -721,4 +728,29 @@ $('#cfg-test').addEventListener('click', async () => {
   }
 });
 
-go('home');
+// ===== 起動時に本物のデータを取り込む =====
+// これをしないと、ホーム・分析・月末締めが見本データのままになる
+async function boot() {
+  if (!API.ready()) return;                       // 未設定なら見本のまま動かす
+  try {
+    const [cur, prev] = await Promise.all([
+      API.call('summary', { month: THIS_M }),
+      API.call('summary', { month: PREV_M }),
+    ]);
+    receipts = [...cur.receipts, ...prev.receipts].map(fromServer);
+
+    // 見本の精算・固定費を捨てる（本物が入るまで空にしておく）
+    settles = [];
+    closed = {};
+    const u = cur.unpaid;
+    if (u && u.amount > 0) closed[u.month] = { amount: u.amount, dir: u.direction };
+    settleMonth = (u && u.month) || PREV_M;
+    templates.length = 0;
+    Object.keys(fxByMonth).forEach((k) => { delete fxByMonth[k]; });
+  } catch (e) {
+    toast(`データを読めませんでした：${e.message}`);
+  }
+}
+
+$('#home-demo').hidden = API.ready();             // 見本データで動いている印
+boot().then(() => go('home'));

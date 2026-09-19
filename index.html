@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <title>warikan v2 デザイン案</title>
+  <title>warikan</title>
+  <meta name="apple-mobile-web-app-title" content="warikan">
+  <!-- アイコン（外部ファイルを増やさないよう SVG を直接書く）-->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23232c4a'/%3E%3Cpath d='M16 5v22M9 11h14M9 21h14' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,6 +30,8 @@
 <!-- ① ホーム -->
 <section id="v-home" class="view">
   <header class="apphead"><h1 class="logo">warikan</h1><span class="month" id="home-month"></span></header>
+  <p class="purpose">今月いくら貸し借りがあるかを見る場所です。レシートを撮るのもここから。</p>
+  <p class="purpose warn" id="home-demo" hidden>⚠️ これは<b>見本の数字</b>です。設定で GAS の URL と合言葉を入れると本物になります。</p>
 
   <div class="hero raised">
     <p class="hero-label">今月の精算（レシート分）</p>
@@ -59,6 +64,7 @@
 <!-- ② 確認・仕訳 -->
 <section id="v-review" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>確認・仕訳</h2></header>
+  <p class="purpose">品目ごとに<b>誰の分か</b>を決める場所です。ボタンを押すと 共通 → 私 → 妻 と変わります。</p>
 
   <div class="notice" id="noitems-banner" hidden>
     <span class="notice-dot"></span>
@@ -103,6 +109,7 @@
 <!-- ②' 金額だけ入力 -->
 <section id="v-manual" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>金額だけ入力</h2></header>
+  <p class="purpose">レシートがない立て替えや現金払いを、1 行だけで記録する場所です。</p>
   <div class="card">
     <label class="field"><span>金額</span><input type="number" id="m-amount" inputmode="numeric" placeholder="0"></label>
     <label class="field"><span>メモ</span><input type="text" id="m-memo" placeholder="例：ランチ立て替え"></label>
@@ -122,6 +129,7 @@
 <!-- ③ 明細（レシート単位） -->
 <section id="v-list" class="view" hidden>
   <header class="apphead"><h1 class="logo">明細</h1></header>
+  <p class="purpose">登録したレシートを月ごとに見る場所です。カードを押すと<b>写真と中身</b>が開きます。</p>
   <div class="notice" id="demo-banner" hidden>
     <span class="notice-dot"></span>
     <span class="grow">デモのデータです<small>設定で GAS の URL と合言葉を入れると本物になります</small></span>
@@ -150,6 +158,7 @@
 <!-- ④ レシート詳細 -->
 <section id="v-detail" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="list"><svg class="ico"><use href="#i-back"/></svg></button><h2 id="d-title">レシート</h2></header>
+  <p class="purpose">このレシートの写真と品目です。<b>二人とも同じもの</b>が見られます。</p>
   <div id="d-photo"></div>
   <div class="card">
     <table class="calc"><tbody id="d-head"></tbody></table>
@@ -163,6 +172,7 @@
 <!-- ⑤ 月末締め -->
 <section id="v-close" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="list"><svg class="ico"><use href="#i-back"/></svg></button><h2>月末締め</h2></header>
+  <p class="purpose">その月の固定費を入れて、<b>精算額を確定する</b>場所です。締めた月はもう変わりません。</p>
 
   <div class="card">
     <p class="field-title">この月の固定費を入れる</p>
@@ -194,6 +204,7 @@
 <!-- ⑥ 分析 -->
 <section id="v-stats" class="view" hidden>
   <header class="apphead"><h1 class="logo">分析</h1><span class="month" id="stats-month"></span></header>
+  <p class="purpose">何にいくら使ったかを見る場所です。先月とも比べられます。</p>
 
   <div class="card">
     <p class="field-title">費目別の支出（今月）</p>
@@ -219,6 +230,7 @@
 <!-- ⑦ 精算の記録 -->
 <section id="v-settle" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>精算の記録</h2></header>
+  <p class="purpose">実際にお金を<b>渡した／受け取った</b>ことを記録する場所です。</p>
 
   <div class="hero raised">
     <p class="hero-label">未精算</p>
@@ -248,6 +260,7 @@
 <!-- ⑧ 設定 -->
 <section id="v-settings" class="view" hidden>
   <header class="apphead"><h1 class="logo">設定</h1></header>
+  <p class="purpose">GAS の URL と合言葉、自分が夫か妻かを決める場所です。<b>最初に 1 回だけ</b>やれば十分です。</p>
 
   <div class="card">
     <p class="field-title">このスマホの持ち主</p>
