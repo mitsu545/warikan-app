@@ -38,7 +38,7 @@ function fakePhoto(seed, w = 520, h = 340) {
 const THIS_M = '2026-09', PREV_M = '2026-08';
 let month = THIS_M;
 
-const receipts = [
+let receipts = [
   { id: 'r1', month: THIS_M, date: '2026-09-17', store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, photo: 1, hasItems: true, items: [
     { n: 'スーパードライ 350ml', a: 228, s: 'me', c: '食費', rule: true },
     { n: '本麒麟 350ml', a: 158, s: 'wife', c: '食費', rule: true },
@@ -270,7 +270,25 @@ $('#add-row').addEventListener('click', () => {
 });
 $('#r-total').addEventListener('change', (e) => { draft.total = Number(e.target.value) || 0; drawRows(); });
 $('#r-payer').addEventListener('click', () => { draft.payer = other(draft.payer); $('#r-payer').textContent = PERSON[draft.payer]; });
-$('#r-send').addEventListener('click', () => toast('送りました（プロトタイプなので保存はされません）'));
+$('#r-send').addEventListener('click', async () => {
+  const rows = draftRows().filter((r) => r.a !== 0 || r.n);
+  if (!rows.length) { alert('品目がありません'); return; }
+  if (!API.ready()) { toast('送りました（未接続なので保存はされません）'); go('home'); return; }
+
+  const btn = $('#r-send');
+  btn.disabled = true; btn.textContent = '送信中…';
+  try {
+    const res = await API.call('save', toServer(draft, rows, store.get(LS.owner, 'me')));
+    month = draft.date.slice(0, 7);
+    toast(`保存しました（${res.saved}品目）`);
+    go('home');
+  } catch (e) {
+    alert(`送れませんでした。\n${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="ico"><use href="#i-send"/></svg>送る';
+  }
+});
 
 // ===== ②' 金額だけ入力 =====
 function renderManual() {
@@ -288,9 +306,24 @@ $('#m-payer').addEventListener('click', (e) => { e.target.textContent = e.target
 
 // ===== ③ 明細（レシート単位）=====
 let openId = 'r1';
-function renderList() {
+async function renderList() {
   $('#list-month').textContent = monthLabel(month);
   $('#next-m').disabled = month >= THIS_M;
+  $('#demo-banner').hidden = API.ready();
+
+  if (API.ready()) {                       // 本物のデータに入れ替える
+    const box = $('#list-cards');
+    box.innerHTML = '<p class="hint">読み込み中…</p>';
+    try {
+      const res = await API.call('summary', { month });
+      const got = res.receipts.map(fromServer);
+      receipts = receipts.filter((r) => r.month !== month).concat(got);
+    } catch (e) {
+      box.innerHTML = `<p class="hint" style="color:var(--danger)">${esc(e.message)}</p>`;
+      return;
+    }
+  }
+
   drawTrack('l', shareTotals(monthRows(month).map((r) => ({ share: r.share, amount: r.amount }))));
   const box = $('#list-cards'); box.innerHTML = '';
   const list = receipts.filter((r) => r.month === month).sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -318,8 +351,16 @@ $('#prev-m').addEventListener('click', () => { month = PREV_M; renderList(); });
 $('#next-m').addEventListener('click', () => { month = THIS_M; renderList(); });
 
 // ===== ④ レシート詳細 =====
-function renderDetail() {
+async function renderDetail() {
+  if (API.ready()) {
+    try {
+      const res = await API.call('receipt', { receipt_id: openId });
+      const got = fromServer(res.receipt);
+      receipts = receipts.map((x) => (x.id === openId ? Object.assign(x, got) : x));
+    } catch (e) { /* 取れなければ手元のものを表示する */ }
+  }
   const r = receipts.find((x) => x.id === openId);
+  if (!r) { go('list'); return; }
   $('#d-title').textContent = r.store;
   $('#d-photo').innerHTML = r.photoData
     ? `<img class="photo" src="${r.photoData}" alt="${esc(r.store)}のレシート">`
@@ -513,6 +554,12 @@ $('#s-hist').addEventListener('click', (e) => {
 
 // ===== ⑧ 設定 =====
 function renderSettings() {
+  $('#cfg-url').value = API.url;
+  $('#cfg-secret').value = API.secret;
+  $('#cfg-state').innerHTML = API.ready()
+    ? '<b style="color:var(--ok)">設定済みです</b>'
+    : '未設定です。いまはデモのデータが出ています';
+  document.querySelectorAll('input[name="owner"]').forEach((r) => { r.checked = r.value === store.get(LS.owner, 'me'); });
   $('#tpl-list').innerHTML = templates.map((t, i) => `
     <div class="fx ${t.share}" data-i="${i}">
       <div class="r-top">
@@ -554,6 +601,25 @@ $('#tpl-list').addEventListener('click', (e) => {
   });
   renderSettings();
 });
-$('#tpl-add').addEventListener('click', () => toast('プロトタイプなので追加はできません'));
+$('#tpl-add').addEventListener('click', () => toast('固定費の保存は段階5で作ります'));
+
+document.querySelectorAll('input[name="owner"]').forEach((r) => r.addEventListener('change', (e) => {
+  store.set(LS.owner, e.target.value);
+  toast(`このスマホは「${PERSON[e.target.value]}」に設定しました`);
+}));
+
+$('#cfg-test').addEventListener('click', async () => {
+  store.set(LS.url, $('#cfg-url').value.trim());
+  store.set(LS.secret, $('#cfg-secret').value.trim());
+  const st = $('#cfg-state');
+  st.textContent = '確かめています…';
+  try {
+    const res = await API.call('ping');
+    st.innerHTML = `<b style="color:var(--ok)">つながりました</b>（シート ${res.sheets.length} 枚を確認）`;
+    toast('つながりました');
+  } catch (e) {
+    st.innerHTML = `<b style="color:var(--danger)">${esc(e.message)}</b>`;
+  }
+});
 
 go('home');

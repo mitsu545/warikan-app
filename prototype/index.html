@@ -121,6 +121,10 @@
 <!-- ③ 明細（レシート単位） -->
 <section id="v-list" class="view" hidden>
   <header class="apphead"><h1 class="logo">明細</h1></header>
+  <div class="notice" id="demo-banner" hidden>
+    <span class="notice-dot"></span>
+    <span class="grow">デモのデータです<small>設定で GAS の URL と合言葉を入れると本物になります</small></span>
+  </div>
   <div class="monthnav">
     <button type="button" id="prev-m"><svg class="ico"><use href="#i-back"/></svg></button>
     <span id="list-month"></span>
@@ -254,8 +258,10 @@
 
   <div class="card">
     <p class="field-title">つなぎ先</p>
-    <label class="field"><span>GAS の Web App URL</span><input type="text" placeholder="https://script.google.com/…"></label>
-    <label class="field"><span>合言葉</span><input type="text" placeholder="2人で決めた合言葉"></label>
+    <label class="field"><span>GAS の Web App URL</span><input type="text" id="cfg-url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label class="field"><span>合言葉</span><input type="text" id="cfg-secret" placeholder="2人で決めた合言葉"></label>
+    <button class="submit" id="cfg-test" style="min-height:52px;font-size:17px"><svg class="ico"><use href="#i-check"/></svg>保存してつながるか試す</button>
+    <p class="hint" id="cfg-state"></p>
     <p class="hint">この2つはこの端末の中だけに保存されます。リポジトリには入りません</p>
   </div>
 
@@ -283,6 +289,7 @@
 </nav>
 
 <div id="toast" hidden></div>
+<script src="api.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
