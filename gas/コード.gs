@@ -135,6 +135,7 @@ function actionSave(req) {
     });
     iSheet.getRange(iSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 
+    bumpSumVersion();                       // 保存したら記憶を全部無効にする
     return { ok: true, receipt_id: id, saved: rows.length, photo_saved: Boolean(photoId), settle: settleOf(ss, month) };
   } finally {
     lock.releaseLock();
@@ -142,9 +143,28 @@ function actionSave(req) {
 }
 
 // ===== action：その月の一覧 =====
+// 同じ月を続けて聞かれたとき用の短い記憶。
+// 鍵に「版」を混ぜてある。保存のたびに版を変えるので、
+// 保存より前に始まった集計があとから書き込んでも、古い鍵になって読まれない。
+function sumVersion() {
+  var c = CacheService.getScriptCache();
+  var v = c.get('sumver');
+  if (!v) { v = String(Date.now()); c.put('sumver', v, 21600); }
+  return v;
+}
+function bumpSumVersion() {
+  CacheService.getScriptCache().put('sumver', String(Date.now()) + '-' + Math.random(), 21600);
+}
+function sumCacheKey(month) { return 'sum-' + sumVersion() + '-' + month; }
+
 function actionSummary(req) {
   var month = String(req.month || '');
   if (!/^\d{4}-\d{2}$/.test(month)) return { ok: false, error: '月の指定が正しくありません（例 2026-09）' };
+
+  var cache = CacheService.getScriptCache();
+  var key = sumCacheKey(month);
+  var hit = cache.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) { /* 壊れていたら作り直す */ } }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var receipts = rows(ss, 'レシート').filter(function (x) { return x.month === month; });
@@ -156,13 +176,20 @@ function actionSummary(req) {
 
   receipts.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
 
-  return {
+  var out = {
     ok: true, month: month,
     receipts: receipts,
     settle: settleOf(ss, month),
     closed: rows(ss, '月次精算').filter(function (c) { return c.month === month; })[0] || null,
     unpaid: unpaidOf(ss)
   };
+  // 記憶は 100KB まで。日本語は1文字で3バイトになるので余裕をみる。
+  // 入りきらなくても集計は返す（覚えられないだけ）
+  try {
+    var text = JSON.stringify(out);
+    if (text.length < 30000) cache.put(key, text, 120);   // 2分だけ覚える
+  } catch (e) { /* 覚えられなくても動きに影響はない */ }
+  return out;
 }
 
 // ===== action：レシート1件 =====

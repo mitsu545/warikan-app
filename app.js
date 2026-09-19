@@ -164,7 +164,9 @@ const TABS = ['home', 'list', 'stats', 'settings'];
 const PARENT = { review: 'home', manual: 'home', detail: 'list', close: 'list', settle: 'home' };
 const R = { home: renderHome, review: renderReview, manual: renderManual, list: renderList,
   detail: renderDetail, close: renderClose, stats: renderStats, settle: renderSettle, settings: renderSettings };
+let view = 'home';
 function go(v) {
+  view = v;
   document.querySelectorAll('.view').forEach((s) => { s.hidden = s.id !== `v-${v}`; });
   const tab = TABS.includes(v) ? v : PARENT[v];
   document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
@@ -413,6 +415,7 @@ $('#r-send').addEventListener('click', async () => {
     if (draft.photo && draft.fromCamera) body.photo = draft.photo;   // 写真はドライブへ
     const res = await API.call('save', body);
     month = draft.date.slice(0, 7);
+    invalidate(month);                    // 保存したぶんを必ず読み直す
     toast(res.photo_saved ? `保存しました（${res.saved}品目・写真つき）` : `保存しました（${res.saved}品目）`);
     go('list');            // 一覧が自分で読み直す。ここで読み直すと二重に取りに行くことになる
   } catch (e) {
@@ -461,6 +464,7 @@ $('#m-send').addEventListener('click', async () => {
       items: [{ item: memo, amount, share: mShare, category: $('#m-cat').value, rule_applied: false }],
     });
     month = date.slice(0, 7);
+    invalidate(month);                    // 保存したぶんを必ず読み直す
     toast('保存しました');
     go('list');
   } catch (e) {
@@ -477,23 +481,35 @@ async function renderList() {
   $('#list-month').textContent = monthLabel(month);
   $('#next-m').disabled = month >= THIS_M;
   $('#demo-banner').hidden = API.ready();
+  const m = month;
 
-  if (API.ready()) {                       // 本物のデータに入れ替える
-    const box = $('#list-cards');
-    box.innerHTML = '<p class="hint">読み込み中…</p>';
-    try {
-      const res = await API.call('summary', { month });
-      const got = res.receipts.map(fromServer);
-      receipts = receipts.filter((r) => r.month !== month).concat(got);
-    } catch (e) {
-      box.innerHTML = `<p class="hint" style="color:var(--danger)">${esc(e.message)}</p>`;
+  if (API.ready() && !loadedMonths.has(m)) {     // 初めての月だけ待つ
+    $('#list-cards').innerHTML = '<p class="hint">読み込み中…</p>';
+    try { await fetchMonth(m); }
+    catch (e) {
+      if (month === m) $('#list-cards').innerHTML = `<p class="hint" style="color:var(--danger)">${esc(e.message)}</p>`;
       return;
     }
+    if (month !== m) return;                  // 待っている間に月を切り替えられた
   }
+  drawList(m);
 
-  drawTrack('l', shareTotals(monthRows(month).map((r) => ({ share: r.share, amount: r.amount }))));
+  // 2回目からは手元のものをすぐ出し、裏で最新を取って差し替える。
+  // ただし直前に読んだばかりなら取り直さない（タブを行き来するたびの通信を防ぐ）
+  if (API.ready() && loadedMonths.has(m) && !isFresh(m)) {
+    $('#list-sync').hidden = false;
+    fetchMonth(m)
+      .then(() => { if (view === 'list' && month === m) drawList(m); })
+      .catch(() => {})
+      .finally(() => { $('#list-sync').hidden = true; });
+  }
+}
+
+function drawList(m = month) {
+  if (m !== month) return;
+  drawTrack('l', shareTotals(monthRows(m).map((r) => ({ share: r.share, amount: r.amount }))));
   const box = $('#list-cards'); box.innerHTML = '';
-  const list = receipts.filter((r) => r.month === month).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const list = receipts.filter((r) => r.month === m).sort((a, b) => (a.date < b.date ? 1 : -1));
   if (!list.length) { box.innerHTML = '<p class="hint">この月の明細はまだありません</p>'; return; }
   list.forEach((r) => {
     const t = shareTotals(r.items.map((i) => ({ share: i.s, amount: i.a })));
@@ -521,14 +537,14 @@ $('#next-m').addEventListener('click', () => { month = THIS_M; renderList(); });
 
 // ===== ④ レシート詳細 =====
 async function renderDetail() {
-  if (API.ready()) {
+  let r = receipts.find((x) => x.id === openId);
+  if (!r && API.ready()) {                  // 手元に無いときだけ取りに行く
     try {
       const res = await API.call('receipt', { receipt_id: openId });
-      const got = fromServer(res.receipt);
-      receipts = receipts.map((x) => (x.id === openId ? Object.assign(x, got) : x));
-    } catch (e) { /* 取れなければ手元のものを表示する */ }
+      r = fromServer(res.receipt);
+      if (r.id === openId) receipts = receipts.concat(r);   // 別物なら手元を汚さない
+    } catch (e) { /* 取れなければ下で一覧に戻す */ }
   }
-  const r = receipts.find((x) => x.id === openId);
   if (!r) { go('list'); return; }
   $('#d-title').textContent = r.store;
   const box = $('#d-photo');
@@ -672,7 +688,12 @@ $('#c-do').addEventListener('click', () => {
 });
 
 // ===== ⑥ 分析 =====
-function renderStats() {
+async function renderStats() {
+  await ensureMonth(PREV_M);               // 先月との比較に要る
+  if (view !== 'stats') return;
+  drawStats();
+}
+function drawStats() {
   $('#stats-month').textContent = monthLabel(THIS_M);
   // 費目別は1系列なので単色。値は棒の先に直接置く（薄い色でも読めるように）
   const by = {};
@@ -809,25 +830,67 @@ $('#cfg-test').addEventListener('click', async () => {
   }
 });
 
+// ===== サーバーから月を読む =====
+// 一度読んだ月は覚えておき、次からは手元のものをすぐ出す（待たせない）
+const loadedMonths = new Set();
+const fetching = new Map();
+const fetchedAt = new Map();
+const FRESH_MS = 30000;                 // 30秒以内に読んだ月は取り直さない
+let gen = 0;                            // 保存が割り込んだかを見分ける番号
+
+const isFresh = (m) => Date.now() - (fetchedAt.get(m) || 0) < FRESH_MS;
+
+// 保存したら、その月について「読んだ」「新しい」をすべて取り消す。
+// 途中の取得も無効にするので、保存前の古い中身をつかまない。
+function invalidate(m) {
+  fetchedAt.delete(m); loadedMonths.delete(m); fetching.delete(m); gen++;
+}
+
+function fetchMonth(m) {
+  if (fetching.has(m)) return fetching.get(m);          // 同じ月を二重に取りに行かない
+  const g = gen;
+  const p = API.call('summary', { month: m }).then(
+    (res) => {
+      fetching.delete(m);
+      if (g !== gen) return fetchMonth(m);              // 途中で保存された。取り直す
+      receipts = receipts.filter((r) => r.month !== m).concat(res.receipts.map(fromServer));
+      loadedMonths.add(m);
+      fetchedAt.set(m, Date.now());
+      return res;
+    },
+    (e) => { fetching.delete(m); throw e; },
+  );
+  fetching.set(m, p);
+  return p;
+}
+
+// 未精算はサーバーが持つ値。起動時に1回だけ入れる。
+// 毎回入れ直すと、手元で締めた内容を消してしまい、向きが逆の未精算が出てしまう。
+function applyUnpaid(res) {
+  const u = res && res.unpaid;
+  closed = {}; settles = [];
+  if (u && u.amount > 0) closed[u.month] = { amount: u.amount, dir: u.direction };
+  settleMonth = (u && u.month) || PREV_M;
+}
+
+// まだ読んでいない月だけ取りに行く
+function ensureMonth(m) {
+  if (!API.ready() || loadedMonths.has(m)) return Promise.resolve();
+  return fetchMonth(m).catch(() => {});
+}
+
 // ===== 起動時に本物のデータを取り込む =====
 // これをしないと、ホーム・分析・月末締めが見本データのままになる
 async function boot() {
   if (!API.ready()) return;                       // 未設定なら見本のまま動かす
+  // 見本のデータを先に捨てる（本物が入るまで空にしておく）
+  receipts = [];
+  settles = [];
+  closed = {};
+  templates.length = 0;
+  Object.keys(fxByMonth).forEach((k) => { delete fxByMonth[k]; });
   try {
-    const [cur, prev] = await Promise.all([
-      API.call('summary', { month: THIS_M }),
-      API.call('summary', { month: PREV_M }),
-    ]);
-    receipts = [...cur.receipts, ...prev.receipts].map(fromServer);
-
-    // 見本の精算・固定費を捨てる（本物が入るまで空にしておく）
-    settles = [];
-    closed = {};
-    const u = cur.unpaid;
-    if (u && u.amount > 0) closed[u.month] = { amount: u.amount, dir: u.direction };
-    settleMonth = (u && u.month) || PREV_M;
-    templates.length = 0;
-    Object.keys(fxByMonth).forEach((k) => { delete fxByMonth[k]; });
+    applyUnpaid(await fetchMonth(THIS_M));   // 先月は必要になってから読む（起動を速くする）
   } catch (e) {
     toast(`データを読めませんでした：${e.message}`);
   }
