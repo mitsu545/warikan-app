@@ -116,10 +116,15 @@ function actionSave(req) {
       catch (e) { photoId = ''; }     // 写真が失敗しても明細は保存する
     }
 
-    rSheet.appendRow([
+    // 日付の欄は先に「文字列」と指定してから書く（勝手に日付に変換されるのを防ぐ）
+    var line = rSheet.getLastRow() + 1;
+    rSheet.getRange(line, 2).setNumberFormat('@');    // date
+    rSheet.getRange(line, 9).setNumberFormat('@');    // month
+    rSheet.getRange(line, 10).setNumberFormat('@');   // created_at
+    rSheet.getRange(line, 1, 1, 10).setValues([[
       id, r.date, r.store || '', num(r.total), person(r.payer), person(r.entered_by),
       photoId, r.has_items === false ? false : true, month, now
-    ]);
+    ]]);
 
     var rows = items.map(function (it, n) {
       return [
@@ -310,6 +315,18 @@ function sheet(ss, name) {
 }
 
 // 1行目を見出しとして、各行をオブジェクトの配列にする
+// スプレッドシートは "2026-09" や "2026-09-19" を打ち込むと勝手に日付に変えてしまう。
+// そのまま読むと文字列と一致せず、月で探しても1件も見つからなくなる。
+// 読むときに必ず元の文字列に戻す。シートを読む処理は必ず rows() を通すこと。
+function asText(key, v) {
+  if (!(v instanceof Date)) return v;
+  if (key === 'month') return v.getFullYear() + '-' + pad2(v.getMonth() + 1);
+  if (key === 'created_at' || key === 'closed_at') {
+    return fmtDate(v) + ' ' + pad2(v.getHours()) + ':' + pad2(v.getMinutes());
+  }
+  return fmtDate(v);                       // date など日付の欄
+}
+
 function rows(ss, name) {
   var sh = sheet(ss, name);
   var last = sh.getLastRow();
@@ -318,10 +335,9 @@ function rows(ss, name) {
   var head = values[0];
   return values.slice(1).map(function (row) {
     var o = {};
-    head.forEach(function (h, i) { o[h] = row[i]; });
+    head.forEach(function (h, i) { o[h] = asText(h, row[i]); });
     if (o.amount !== undefined) o.amount = num(o.amount);
     if (o.total !== undefined) o.total = num(o.total);
-    if (o.date instanceof Date) o.date = fmtDate(o.date);
     return o;
   });
 }
