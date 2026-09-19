@@ -41,13 +41,14 @@
     <svg class="ico"><use href="#i-back"/></svg>
   </button>
 
-  <button class="action primary" data-go="review" data-mode="items">
+  <label class="action primary">
     <svg class="ico"><use href="#i-camera"/></svg>
-    <span class="action-txt">レシートを撮る<small>読み取りは段階3。いまは見本の明細が出ます</small></span>
-  </button>
-  <button class="action" data-go="review" data-mode="noitems">
-    <svg class="ico"><use href="#i-camera"/></svg>
-    <span class="action-txt">明細なしのレシート<small>合計だけの1行モードを見る</small></span>
+    <span class="action-txt">レシートを撮る<small>カメラが開きます。写真は保存されます</small></span>
+    <input type="file" id="camera" accept="image/*" capture="environment" hidden>
+  </label>
+  <button class="action" data-go="review" data-mode="items">
+    <svg class="ico"><use href="#i-list"/></svg>
+    <span class="action-txt">見本の明細で試す<small>品目の読み取りは段階3。動きの確認用</small></span>
   </button>
   <button class="action" data-go="manual">
     <svg class="ico"><use href="#i-pen"/></svg>
@@ -61,7 +62,7 @@
 
   <div class="notice" id="noitems-banner" hidden>
     <span class="notice-dot"></span>
-    <span class="grow">明細が読み取れませんでした<small>合計だけで登録します。区分を選んで送るだけです</small></span>
+    <span class="grow" id="noitems-txt"></span>
   </div>
 
   <img class="photo" id="r-photo" alt="レシートの写真">
@@ -96,15 +97,15 @@
   <ul id="r-rows" class="rows"></ul>
   <button class="ghost" id="add-row"><svg class="ico"><use href="#i-plus"/></svg><span id="add-row-txt">行を追加</span></button>
 
-  <div class="actionbar"><button class="submit" data-go="home" id="r-send"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
+  <div class="actionbar"><button class="submit" id="r-send"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
 </section>
 
 <!-- ②' 金額だけ入力 -->
 <section id="v-manual" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>金額だけ入力</h2></header>
   <div class="card">
-    <label class="field"><span>金額</span><input type="number" inputmode="numeric" placeholder="0" value="1200"></label>
-    <label class="field"><span>メモ</span><input type="text" placeholder="例：ランチ立て替え"></label>
+    <label class="field"><span>金額</span><input type="number" id="m-amount" inputmode="numeric" placeholder="0"></label>
+    <label class="field"><span>メモ</span><input type="text" id="m-memo" placeholder="例：ランチ立て替え"></label>
     <label class="field"><span>日付</span><input type="date" id="m-date"></label>
     <div class="field-grid">
       <label class="field"><span>費目</span><select id="m-cat"></select></label>
@@ -115,7 +116,7 @@
       <div class="r-bot"><button class="share" id="m-share" type="button">共通<svg class="ico swap"><use href="#i-swap"/></svg></button></div>
     </div>
   </div>
-  <div class="actionbar"><button class="submit" data-go="home"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
+  <div class="actionbar"><button class="submit" id="m-send"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
 </section>
 
 <!-- ③ 明細（レシート単位） -->
@@ -156,7 +157,7 @@
   <p class="sec-label">誰の分？</p>
   <p class="hint" style="margin-top:0">大きなボタンで支払対象、小さなバッジで費目を直せます</p>
   <ul id="d-rows" class="rows"></ul>
-  <button class="danger" data-go="list">このレシートを削除</button>
+  <button class="danger" disabled title="段階4で作ります">このレシートを削除（段階4で作ります）</button>
 </section>
 
 <!-- ⑤ 月末締め -->
@@ -259,6 +260,7 @@
   <div class="card">
     <p class="field-title">つなぎ先</p>
     <label class="field"><span>GAS の Web App URL</span><input type="text" id="cfg-url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <p class="hint" style="margin-top:-6px">⚠️ スプレッドシートの URL ではありません。Apps Script の「デプロイ」で出る、<b>末尾が /exec</b> の URL です</p>
     <label class="field"><span>合言葉</span><input type="text" id="cfg-secret" placeholder="2人で決めた合言葉"></label>
     <button class="submit" id="cfg-test" style="min-height:52px;font-size:17px"><svg class="ico"><use href="#i-check"/></svg>保存してつながるか試す</button>
     <p class="hint" id="cfg-state"></p>

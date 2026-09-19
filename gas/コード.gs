@@ -1,12 +1,15 @@
 /**
- * warikan-app / Google Apps Script（段階1：土台）
+ * warikan-app / Google Apps Script（段階2：土台＋レシート写真）
  *
  * やること
- *   - setup()  … スプレッドシートに 7 枚のシートを作る（最初に 1 回だけ実行）
- *   - doPost() … スマホのアプリからの save / summary / receipt / ping を受ける
+ *   - setup()      … シート7枚を作り、写真用フォルダを用意し、自動削除の予約を入れる
+ *   - doPost()     … アプリからの ping / save / summary / receipt / photo を受ける
+ *   - 写真の掃除   … 1日1回、期限を過ぎた写真を消す（setup が予約する）
  *
- * 事前に「プロジェクトの設定 → スクリプト プロパティ」に登録するもの
- *   SECRET … 2人で決めた合言葉（このコードには書かない）
+ * 「プロジェクトの設定 → スクリプト プロパティ」に登録するもの
+ *   SECRET          … 2人で決めた合言葉（このコードには書かない）
+ *   PHOTO_KEEP_DAYS … 写真を残す日数。省略すると 62日（約2か月）
+ *   PHOTO_FOLDER_ID … setup が自動で入れます。手で触らなくてよい
  *
  * 手順は docs/setup.md を見てください。
  */
@@ -45,8 +48,13 @@ function setup() {
   var first = ss.getSheetByName('シート1') || ss.getSheetByName('Sheet1');
   if (first && ss.getSheets().length > 1 && first.getLastRow() === 0) ss.deleteSheet(first);
 
+  var folder = photoFolder();          // 写真の置き場（非公開）を用意する
+  setupPhotoCleanup();                 // 1日1回の自動削除を予約する
+
   var msg = '作ったシート：' + (made.length ? made.join('、') : 'なし')
           + '\nもともとあったシート：' + (kept.length ? kept.join('、') : 'なし')
+          + '\n写真の保存先：' + folder.getName()
+          + '\n写真を残す日数：' + keepDays() + '日'
           + '\n\n合言葉（SECRET）の登録を忘れずに。';
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert('セットアップ完了', msg, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) {}
@@ -74,6 +82,7 @@ function doPost(e) {
       case 'save':    return json(actionSave(req));
       case 'summary': return json(actionSummary(req));
       case 'receipt': return json(actionReceipt(req));
+      case 'photo':   return json(actionPhoto(req));
       default:        return json({ ok: false, error: '知らない action です：' + req.action });
     }
   } catch (err) {
@@ -100,9 +109,16 @@ function actionSave(req) {
     var id = newReceiptId(rSheet, r.date);
     var now = stamp();
 
+    // 写真が付いていればドライブに保存し、そのファイルIDだけをシートに残す
+    var photoId = '';
+    if (req.photo) {
+      try { photoId = savePhoto(req.photo, id); }
+      catch (e) { photoId = ''; }     // 写真が失敗しても明細は保存する
+    }
+
     rSheet.appendRow([
       id, r.date, r.store || '', num(r.total), person(r.payer), person(r.entered_by),
-      r.photo_id || '', r.has_items === false ? false : true, month, now
+      photoId, r.has_items === false ? false : true, month, now
     ]);
 
     var rows = items.map(function (it, n) {
@@ -113,7 +129,7 @@ function actionSave(req) {
     });
     iSheet.getRange(iSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 
-    return { ok: true, receipt_id: id, saved: rows.length, settle: settleOf(ss, month) };
+    return { ok: true, receipt_id: id, saved: rows.length, photo_saved: Boolean(photoId), settle: settleOf(ss, month) };
   } finally {
     lock.releaseLock();
   }
@@ -194,6 +210,92 @@ function unpaidOf(ss) {
   return { amount: Math.abs(owed), month: month, direction: owed >= 0 ? 'wife_to_me' : 'me_to_wife' };
 }
 
+// ===== 写真（段階2） =====
+
+// 何日残すか。スクリプトプロパティ PHOTO_KEEP_DAYS で変えられる
+function keepDays() {
+  var v = parseInt(prop('PHOTO_KEEP_DAYS'), 10);
+  return (v > 0) ? v : 62;              // 省略時は 62日（約2か月）
+}
+
+// 写真の置き場。なければ作る。⚠️ 共有設定はしない（GAS 経由でしか見せない）
+function photoFolder() {
+  var id = prop('PHOTO_FOLDER_ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* 消えていたら作り直す */ }
+  }
+  var name = 'warikan レシート写真';
+  var found = DriveApp.getFoldersByName(name);
+  var folder = found.hasNext() ? found.next() : DriveApp.createFolder(name);
+  PropertiesService.getScriptProperties().setProperty('PHOTO_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+// base64（data:image/jpeg;base64,... の形）を受け取って保存し、ファイルIDを返す
+function savePhoto(dataUrl, receiptId) {
+  var m = String(dataUrl).match(/^data:(image\/[a-z]+);base64,(.+)$/i);
+  if (!m) throw new Error('写真の形式が違います');
+  var bytes = Utilities.base64Decode(m[2]);
+  var blob = Utilities.newBlob(bytes, m[1], receiptId + '.jpg');
+  return photoFolder().createFile(blob).getId();
+}
+
+// アプリから写真を取り出す。ドライブを公開しないので必ずここを通す
+function actionPhoto(req) {
+  var id = String(req.receipt_id || '');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var r = rows(ss, 'レシート').filter(function (x) { return x.receipt_id === id; })[0];
+  if (!r) return { ok: false, error: 'そのレシートは見つかりません' };
+  if (!r.photo_id) return { ok: true, photo: '', reason: 'なし' };
+  try {
+    var f = DriveApp.getFileById(r.photo_id);
+    var b = f.getBlob();
+    return { ok: true, photo: 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()) };
+  } catch (e) {
+    return { ok: true, photo: '', reason: '期限切れ' };   // 自動削除済み
+  }
+}
+
+// ===== 写真の自動削除（1日1回） =====
+
+// setup から呼ばれる。同じ予約を二重に作らない
+function setupPhotoCleanup() {
+  var already = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'cleanupPhotos';
+  });
+  if (already) return;
+  ScriptApp.newTrigger('cleanupPhotos').timeBased().everyDays(1).atHour(3).create();
+}
+
+// 期限を過ぎた写真を消し、シートの photo_id を空にする
+function cleanupPhotos() {
+  var limit = new Date(Date.now() - keepDays() * 24 * 60 * 60 * 1000);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = sheet(ss, 'レシート');
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+
+  var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var col = head.indexOf('photo_id') + 1;
+  if (col < 1) return 0;
+
+  var ids = sh.getRange(2, col, last - 1, 1).getValues();
+  var removed = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var id = String(ids[i][0] || '');
+    if (!id) continue;
+    try {
+      var f = DriveApp.getFileById(id);
+      if (f.getDateCreated() < limit) { f.setTrashed(true); ids[i][0] = ''; removed++; }
+    } catch (e) {
+      ids[i][0] = '';                 // もう無いファイルは記録も消す
+    }
+  }
+  if (removed) sh.getRange(2, col, ids.length, 1).setValues(ids);
+  Logger.log('消した写真：' + removed + '枚（' + keepDays() + '日より前）');
+  return removed;
+}
+
 // ===== 小道具 =====
 function prop(k) { return PropertiesService.getScriptProperties().getProperty(k) || ''; }
 
@@ -261,6 +363,10 @@ function テスト保存() {
     ]
   });
   Logger.log(JSON.stringify(res, null, 2));
+}
+
+function テスト写真の掃除() {
+  Logger.log('消した枚数：' + cleanupPhotos());
 }
 
 function テスト一覧() {

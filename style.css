@@ -323,3 +323,7 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .fx .kind { font-size: 13px; color: var(--muted); }
 .fx .payer:active, .fx .kind:active { box-shadow: var(--sh-in-sm); }
 .fx .payer .swap, .fx .kind .swap { width: 15px; height: 15px; opacity: .55; }
+
+/* 一覧カード：写真があるレシートの印（実物は詳細で開く） */
+.rcard .nophoto.has { color: var(--me); gap: 2px; flex-direction: column; font-size: 10px; font-weight: 800; }
+.rcard .nophoto.has .ico { width: 20px; height: 20px; }

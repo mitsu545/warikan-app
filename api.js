@@ -38,6 +38,25 @@ const API = {
   },
 };
 
+/* 貼られた URL がおかしければ、何が違うかを日本語で返す（問題なければ null）
+   スプレッドシートの URL を貼ってしまう間違いが多いので、そこを名指しで教える */
+function urlProblem(u) {
+  const v = (u || '').trim();
+  if (!v) return 'URL を入れてください';
+  if (v.includes('docs.google.com/spreadsheets')) {
+    return 'これはスプレッドシートの URL です。Apps Script の「デプロイ」で出る、末尾が /exec の URL を貼ってください';
+  }
+  if (v.includes('script.google.com/home') || v.includes('script.google.com/u/')) {
+    return 'これは Apps Script の編集画面の URL です。「デプロイ」→「新しいデプロイ」→「ウェブアプリ」で出る URL を貼ってください';
+  }
+  if (!v.startsWith('https://script.google.com/')) {
+    return 'Apps Script の URL ではないようです。https://script.google.com/macros/s/… の形になります';
+  }
+  if (v.endsWith('/dev')) return '末尾が /dev になっています。/exec で終わる方の URL を使ってください';
+  if (!v.endsWith('/exec')) return '末尾が /exec になっていません。デプロイ画面の URL をそのまま貼ってください';
+  return null;
+}
+
 // サーバーの形 → 画面の形
 function fromServer(r) {
   return {
@@ -45,6 +64,7 @@ function fromServer(r) {
     payer: r.payer === 'wife' ? 'wife' : 'me',
     total: Number(r.total) || 0,
     photo: 0, photoData: null,
+    hasPhoto: Boolean(r.photo_id),
     hasItems: r.has_items === true || r.has_items === 'TRUE',
     items: (r.items || []).map((it) => ({
       n: it.item, a: Number(it.amount) || 0,

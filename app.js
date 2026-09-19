@@ -194,6 +194,43 @@ function unpaid() {
   return { amount: Math.abs(owed), month: m, dir: owed >= 0 ? 'wife_to_me' : 'me_to_wife' };
 }
 
+// ===== 写真を撮る（段階2） =====
+// 端末内で長辺1200pxに縮めてから送る。通信も保存容量も軽くなる
+function shrink(file, maxSide) {
+  return new Promise((ok, ng) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k);
+      c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      ok(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); ng(new Error('画像を読み込めません')); };
+    img.src = url;
+  });
+}
+
+$('#camera').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';                       // 同じ写真をもう一度選べるようにする
+  if (!file) return;
+  try {
+    const photo = await shrink(file, 1200);
+    const today = new Date();
+    const d = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+    draft = { date: d, store: '', payer: store.get(LS.owner, 'me'), total: 0,
+      hasItems: false, fromCamera: true, photo,
+      items: [{ n: 'お買い物', a: 0, s: 'common', c: 'その他' }] };
+    go('review');
+  } catch (err) {
+    alert(`写真を扱えませんでした。\n${err.message}`);
+  }
+});
+
 // ===== ② 確認・仕訳 =====
 let draft = null;
 function makeDraft(mode) {
@@ -214,6 +251,9 @@ function draftRows() {
 function renderReview() {
   if (!draft) draft = makeDraft('items');
   $('#noitems-banner').hidden = draft.hasItems;
+  $('#noitems-txt').innerHTML = draft.fromCamera
+    ? '写真を保存します<small>合計と店名を入れて、誰の分かを選んでください。品目の読み取りは段階3です</small>'
+    : '明細が読み取れませんでした<small>合計だけで登録します。区分を選んで送るだけです</small>';
   $('#r-photo').src = draft.photo;
   $('#r-date').value = draft.date;
   $('#r-store').value = draft.store;
@@ -269,18 +309,23 @@ $('#add-row').addEventListener('click', () => {
   draft.items.push({ n: '', a: 0, s: 'common', c: 'その他' }); drawRows();
 });
 $('#r-total').addEventListener('change', (e) => { draft.total = Number(e.target.value) || 0; drawRows(); });
+$('#r-store').addEventListener('change', (e) => { draft.store = e.target.value.trim(); });
+$('#r-date').addEventListener('change', (e) => { if (e.target.value) draft.date = e.target.value; });
 $('#r-payer').addEventListener('click', () => { draft.payer = other(draft.payer); $('#r-payer').textContent = PERSON[draft.payer]; });
 $('#r-send').addEventListener('click', async () => {
   const rows = draftRows().filter((r) => r.a !== 0 || r.n);
   if (!rows.length) { alert('品目がありません'); return; }
-  if (!API.ready()) { toast('送りました（未接続なので保存はされません）'); go('home'); return; }
+  if (!Number(draft.total)) { alert('合計を入れてください'); $('#r-total').focus(); return; }
+  if (!API.ready()) { toast('設定で GAS の URL と合言葉を入れてください'); go('settings'); return; }
 
   const btn = $('#r-send');
   btn.disabled = true; btn.textContent = '送信中…';
   try {
-    const res = await API.call('save', toServer(draft, rows, store.get(LS.owner, 'me')));
+    const body = toServer(draft, rows, store.get(LS.owner, 'me'));
+    if (draft.photo && draft.fromCamera) body.photo = draft.photo;   // 写真はドライブへ
+    const res = await API.call('save', body);
     month = draft.date.slice(0, 7);
-    toast(`保存しました（${res.saved}品目）`);
+    toast(res.photo_saved ? `保存しました（${res.saved}品目・写真つき）` : `保存しました（${res.saved}品目）`);
     go('home');
   } catch (e) {
     alert(`送れませんでした。\n${e.message}`);
@@ -292,7 +337,12 @@ $('#r-send').addEventListener('click', async () => {
 
 // ===== ②' 金額だけ入力 =====
 function renderManual() {
-  $('#m-date').value = '2026-09-19';
+  const t = new Date();
+  $('#m-date').value = `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
+  $('#m-amount').value = '';
+  $('#m-memo').value = '';
+  $('#m-payer').textContent = PERSON[store.get(LS.owner, 'me')];
+  mShare = 'common';
   $('#m-cat').innerHTML = CATS.map((c) => `<option>${c}</option>`).join('');
   drawManualShare();
 }
@@ -303,6 +353,35 @@ function drawManualShare() {
 }
 $('#m-share').addEventListener('click', () => { mShare = next(SHARES, mShare); drawManualShare(); });
 $('#m-payer').addEventListener('click', (e) => { e.target.textContent = e.target.textContent === '私' ? '妻' : '私'; });
+
+// 手入力を保存する（レシートなしの現金払い・立て替え用）
+$('#m-send').addEventListener('click', async () => {
+  const amount = Number($('#m-amount').value);
+  const date = $('#m-date').value;
+  if (!Number.isInteger(amount) || amount === 0) { alert('金額を整数で入れてください'); $('#m-amount').focus(); return; }
+  if (!date) { alert('日付を入れてください'); return; }
+  if (!API.ready()) { toast('設定で GAS の URL と合言葉を入れてください'); go('settings'); return; }
+
+  const btn = $('#m-send');
+  btn.disabled = true; btn.textContent = '送信中…';
+  try {
+    const memo = $('#m-memo').value.trim() || '（メモなし）';
+    await API.call('save', {
+      receipt: { date, store: '手入力', total: amount,
+        payer: $('#m-payer').textContent === '妻' ? 'wife' : 'me',
+        entered_by: store.get(LS.owner, 'me'), has_items: false },
+      items: [{ item: memo, amount, share: mShare, category: $('#m-cat').value, rule_applied: false }],
+    });
+    month = date.slice(0, 7);
+    toast('保存しました');
+    go('home');
+  } catch (e) {
+    alert(`送れませんでした。\n${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="ico"><use href="#i-send"/></svg>送る';
+  }
+});
 
 // ===== ③ 明細（レシート単位）=====
 let openId = 'r1';
@@ -334,7 +413,9 @@ async function renderList() {
     const b = document.createElement('button');
     b.className = 'rcard'; b.dataset.rid = r.id;
     b.innerHTML = `
-      ${r.photoData ? `<img class="thumb" src="${r.photoData}" alt="">` : '<div class="nophoto">写真<br>なし</div>'}
+      ${r.photoData ? `<img class="thumb" src="${r.photoData}" alt="">`
+        : r.hasPhoto ? '<div class="nophoto has"><svg class="ico"><use href="#i-camera"/></svg>写真</div>'
+        : '<div class="nophoto">写真<br>なし</div>'}
       <div>
         <div class="top"><span class="store">${esc(r.store)}</span><span class="total">${yen(r.total)}</span></div>
         <div class="meta">${r.date.slice(5).replace('-', '/')}・${PERSON[r.payer]}が支払い・${r.hasItems ? `${r.items.length}品目` : '明細なし'}</div>
@@ -362,9 +443,19 @@ async function renderDetail() {
   const r = receipts.find((x) => x.id === openId);
   if (!r) { go('list'); return; }
   $('#d-title').textContent = r.store;
-  $('#d-photo').innerHTML = r.photoData
-    ? `<img class="photo" src="${r.photoData}" alt="${esc(r.store)}のレシート">`
-    : '<div class="photo-none">写真はありません<br>（手入力、または2か月を過ぎて自動削除されました）</div>';
+  const box = $('#d-photo');
+  if (r.photoData) {
+    box.innerHTML = `<img class="photo" src="${r.photoData}" alt="${esc(r.store)}のレシート">`;
+  } else if (API.ready() && r.hasPhoto) {
+    box.innerHTML = '<div class="photo-none">写真を読み込み中…</div>';
+    API.call('photo', { receipt_id: r.id }).then((res) => {
+      if (openId !== r.id) return;                    // 別のレシートに移っていたら描かない
+      if (res.photo) { r.photoData = res.photo; box.innerHTML = `<img class="photo" src="${res.photo}" alt="レシート">`; }
+      else box.innerHTML = '<div class="photo-none">写真はありません<br>（2か月を過ぎて自動削除されました）</div>';
+    }).catch(() => { box.innerHTML = '<div class="photo-none">写真を読み込めませんでした</div>'; });
+  } else {
+    box.innerHTML = '<div class="photo-none">写真はありません<br>（手入力で登録されたレシートです）</div>';
+  }
   $('#d-head').innerHTML = `
     <tr><td>日付</td><td>${r.date}</td></tr>
     <tr><td>お店</td><td>${esc(r.store)}</td></tr>
@@ -609,9 +700,17 @@ document.querySelectorAll('input[name="owner"]').forEach((r) => r.addEventListen
 }));
 
 $('#cfg-test').addEventListener('click', async () => {
-  store.set(LS.url, $('#cfg-url').value.trim());
-  store.set(LS.secret, $('#cfg-secret').value.trim());
   const st = $('#cfg-state');
+  const url = $('#cfg-url').value.trim();
+
+  const bad = urlProblem(url);                 // 貼り間違いをここで止める
+  if (bad) { st.innerHTML = `<b style="color:var(--danger)">${esc(bad)}</b>`; return; }
+  if (!$('#cfg-secret').value.trim()) {
+    st.innerHTML = '<b style="color:var(--danger)">合言葉を入れてください</b>'; return;
+  }
+
+  store.set(LS.url, url);
+  store.set(LS.secret, $('#cfg-secret').value.trim());
   st.textContent = '確かめています…';
   try {
     const res = await API.call('ping');
