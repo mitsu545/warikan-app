@@ -160,7 +160,8 @@
   <header class="subhead"><button class="iconbtn" data-go="list"><svg class="ico"><use href="#i-back"/></svg></button><h2>月末締め</h2></header>
 
   <div class="card">
-    <p class="field-title">今月の固定費を入れる</p>
+    <p class="field-title">この月の固定費を入れる</p>
+    <p class="hint" id="c-range" style="margin-top:0"></p>
     <p class="hint" style="margin-top:0">毎月変わるものは空欄です。埋めないと締められません。<b>誰の分か</b>もここで変えられます</p>
     <div id="fx-list" class="rows"></div>
     <button class="ghost" id="fx-add"><svg class="ico"><use href="#i-plus"/></svg>今月だけの項目を足す</button>
@@ -222,6 +223,7 @@
 
   <div class="card">
     <p class="field-title">渡した／受け取ったを記録する</p>
+    <p class="hint" style="margin-top:0"><b id="s-month"></b>の精算です。記録する日付は今日でかまいません</p>
     <div class="field-grid">
       <label class="field"><span>日付</span><input type="date" id="s-date"></label>
       <label class="field"><span>金額</span><input type="number" id="s-amt" inputmode="numeric"></label>

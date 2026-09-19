@@ -91,13 +91,20 @@ const templates = [
   { id: 'f5', name: 'Netflix', kind: 'fixed', def: 1590, payer: 'me', share: 'common' },
   { id: 'f6', name: '妻のジム', kind: 'fixed', def: 8800, payer: 'wife', share: 'wife' },
 ];
-const LAST = { f2: 9840, f3: 4380, f4: 4200 };   // 先月の実額（初期値のヒントに使う）
-// その月の実額。変動費は未入力（null）から始める
-let fxMonth = templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : null }));
+const LAST = { f2: 9840, f3: 4380, f4: 4200 };    // 先月の実額（初期値のヒントに使う）
+const LAST0 = { f2: 9120, f3: 5210, f4: 0 };      // 8月の実額（締め済み）
+// その月の実額。月ごとに持つ（変動費は未入力＝null から始める）
+const blankMonth = () => templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : null }));
+const fxByMonth = {
+  '2026-09': blankMonth(),
+  '2026-08': templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : (LAST0[t.id] ?? 0) })),
+};
+const fxOf = (m) => (fxByMonth[m] ||= blankMonth());
 
 // 精算の記録
 // 7月は精算済み、8月は締めたが未精算 → ホームに「未精算」が出る状態を見せる
-let settles = [{ id: 'p1', date: '2026-08-02', dir: 'wife_to_me', amount: 38600, method: '振込', memo: '7月分' }];
+let settles = [{ id: 'p1', date: '2026-08-02', month: '2026-07', dir: 'wife_to_me', amount: 38600, method: '振込', memo: '' }];
+let settleMonth = '2026-08';   // いま精算しようとしている月
 let closed = {
   '2026-07': { amount: 38600, dir: 'wife_to_me' },
   '2026-08': { amount: 42180, dir: 'wife_to_me' },
@@ -119,7 +126,7 @@ function calc(rows) {
 }
 const rowsOf = (r) => r.items.map((i) => ({ amount: i.a, share: i.s, payer: r.payer }));
 const monthRows = (m) => receipts.filter((r) => r.month === m).flatMap(rowsOf);
-const fxRows = () => fxMonth.filter((f) => f.amount).map((f) => ({ amount: f.amount, share: f.share, payer: f.payer }));
+const fxRows = (m) => fxOf(m).filter((f) => f.amount).map((f) => ({ amount: f.amount, share: f.share, payer: f.payer }));
 
 function flowHTML(dir) {
   if (dir === 'none') return '<span class="flow-none">貸し借りなし</span>';
@@ -350,9 +357,17 @@ $('#d-rows').addEventListener('click', (e) => {
 });
 
 // ===== ⑤ 月末締め =====
+// 月の初日・末日（「9/1〜9/30 の登録分」と出すため）
+function monthRange(m) {
+  const [y, mm] = m.split('-').map(Number);
+  return `${mm}/1〜${mm}/${new Date(y, mm, 0).getDate()}`;
+}
 function renderClose() {
+  const m = month;                      // 締めるのは「見ている月」。ボタンを押した日ではない
+  const fxMonthList = fxOf(m);
+  $('#c-range').textContent = `${monthLabel(m)}に登録された分（${monthRange(m)}）だけが対象です。今日の日付は関係ありません`;
   const box = $('#fx-list'); box.innerHTML = '';
-  fxMonth.forEach((f, i) => {
+  fxMonthList.forEach((f, i) => {
     const need = f.amount === null;
     const d = document.createElement('div');
     d.className = `fx ${f.share}${need ? ' need' : ''}`;
@@ -376,17 +391,17 @@ function renderClose() {
     box.appendChild(d);
   });
 
-  const ents = monthRows(THIS_M), fx = fxRows();
+  const ents = monthRows(m), fx = fxRows(m);
   const s = calc([...ents, ...fx]);
-  const left = fxMonth.filter((f) => f.amount === null).length;
+  const left = fxMonthList.filter((f) => f.amount === null).length;
 
-  $('#c-month').textContent = `${monthLabel(THIS_M)}の精算`;
+  $('#c-month').textContent = `${monthLabel(m)}の精算`;
   $('#c-amount').textContent = s.amount.toLocaleString('ja-JP');
   $('#c-flow').innerHTML = flowHTML(s.dir);
 
   const sum = (rows) => rows.reduce((t, r) => t + r.amount, 0);
   $('#c-parts').innerHTML = `
-    <tr><td>レシートの明細</td><td>${receipts.filter((r) => r.month === THIS_M).length}枚</td><td>${yen(sum(ents))}</td></tr>
+    <tr><td>レシートの明細</td><td>${receipts.filter((r) => r.month === m).length}枚</td><td>${yen(sum(ents))}</td></tr>
     <tr><td>固定費</td><td>${fx.length}件</td><td>${yen(sum(fx))}</td></tr>
     <tr class="total"><td>合計</td><td></td><td>${yen(sum(ents) + sum(fx))}</td></tr>`;
 
@@ -411,12 +426,12 @@ function renderClose() {
 $('#fx-list').addEventListener('change', (e) => {
   const d = e.target.closest('.fx'); if (!d || !e.target.classList.contains('amt')) return;
   const v = e.target.value.trim();
-  fxMonth[d.dataset.i].amount = v === '' ? null : Number(v) || 0;
+  fxOf(month)[d.dataset.i].amount = v === '' ? null : Number(v) || 0;
   renderClose();
 });
 // 固定費も「誰の分？」「誰が払った？」をここで変えられる
 $('#fx-list').addEventListener('click', (e) => {
-  const d = e.target.closest('.fx'); const f = d && fxMonth[d.dataset.i];
+  const d = e.target.closest('.fx'); const f = d && fxOf(month)[d.dataset.i];
   if (!f) return;
   if (e.target.closest('.share')) f.share = next(SHARES, f.share);
   else if (e.target.closest('.payer')) f.payer = other(f.payer);
@@ -424,13 +439,15 @@ $('#fx-list').addEventListener('click', (e) => {
   renderClose();
 });
 $('#fx-add').addEventListener('click', () => {
-  fxMonth.push({ id: 'tmp' + Date.now(), name: '今月だけの項目', kind: 'variable', payer: 'me', share: 'common', amount: null });
+  fxOf(month).push({ id: 'tmp' + Date.now(), name: `${monthLabel(month)}だけの項目`, kind: 'variable', payer: 'me', share: 'common', amount: null });
   renderClose();
 });
 $('#c-do').addEventListener('click', () => {
-  const s = calc([...monthRows(THIS_M), ...fxRows()]);
-  closed[THIS_M] = { amount: s.amount, dir: s.dir };
-  toast(`${monthLabel(THIS_M)}を締めました`);
+  const m = month;
+  const s = calc([...monthRows(m), ...fxRows(m)]);
+  closed[m] = { amount: s.amount, dir: s.dir };
+  settleMonth = m;
+  toast(`${monthLabel(m)}を締めました`);
   go('settle');
 });
 
@@ -465,13 +482,14 @@ function renderSettle() {
   const un = unpaid();
   $('#s-amount').textContent = un.amount.toLocaleString('ja-JP');
   $('#s-flow').innerHTML = un.amount ? flowHTML(un.dir) : '<span class="flow-none">すべて精算済みです</span>';
-  $('#s-date').value = '2026-09-19';
+  $('#s-month').textContent = `${monthLabel(un.month || settleMonth)}分`;
+  $('#s-date').value = '2026-10-03';
   $('#s-amt').value = un.amount || '';
   $('#s-dir').textContent = un.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻';
   $('#s-hist').innerHTML = settles.length ? settles.map((p) => `
     <div class="hist" data-pid="${p.id}">
-      <div><div class="k">${p.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻'}</div>
-      <div class="sub">${p.date}・${p.method}${p.memo ? `・${esc(p.memo)}` : ''}</div></div>
+      <div><div class="k">${monthLabel(p.month)}分　${p.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻'}</div>
+      <div class="sub">${p.date} に${p.method}${p.memo ? `・${esc(p.memo)}` : ''}</div></div>
       <div class="v">${yen(p.amount)}</div>
       <button class="del" aria-label="削除">×</button>
     </div>`).join('') : '<p class="hint">まだ記録がありません</p>';
@@ -480,8 +498,9 @@ $('#s-dir').addEventListener('click', (e) => { e.target.textContent = e.target.t
 $('#s-save').addEventListener('click', () => {
   const amt = Number($('#s-amt').value);
   if (!amt) { alert('金額を入れてください'); return; }
-  settles.unshift({ id: 'p' + Date.now(), date: $('#s-date').value, method: $('#s-method').value,
-    memo: $('#s-memo').value, amount: amt, dir: $('#s-dir').textContent === '妻 → 私' ? 'wife_to_me' : 'me_to_wife' });
+  settles.unshift({ id: 'p' + Date.now(), date: $('#s-date').value, month: unpaid().month || settleMonth,
+    method: $('#s-method').value, memo: $('#s-memo').value, amount: amt,
+    dir: $('#s-dir').textContent === '妻 → 私' ? 'wife_to_me' : 'me_to_wife' });
   $('#s-memo').value = '';
   renderSettle(); toast('記録しました');
 });
@@ -525,10 +544,13 @@ $('#tpl-list').addEventListener('click', (e) => {
   else if (e.target.closest('.payer')) t.payer = other(t.payer);
   else if (e.target.closest('.kind')) t.kind = t.kind === 'fixed' ? 'variable' : 'fixed';
   else return;
-  // テンプレートを変えたら、まだ締めていない今月分にも反映する
-  fxMonth = templates.map((x) => {
-    const cur = fxMonth.find((y) => y.id === x.id);
-    return { ...x, amount: x.kind === 'fixed' ? x.def : (cur ? cur.amount : null) };
+  // テンプレートを変えたら、まだ締めていない月の分にも反映する
+  Object.keys(fxByMonth).forEach((mm) => {
+    if (closed[mm]) return;                      // 締め済みの月は触らない
+    fxByMonth[mm] = templates.map((x) => {
+      const cur = fxByMonth[mm].find((y) => y.id === x.id);
+      return { ...x, amount: x.kind === 'fixed' ? x.def : (cur ? cur.amount : null) };
+    });
   });
   renderSettings();
 });
