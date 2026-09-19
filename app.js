@@ -185,8 +185,8 @@ function renderHome() {
   $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
   $('#home-flow').innerHTML = flowHTML(s.dir);
   const un = unpaid();
-  $('#home-unpaid').hidden = un.amount === 0;
-  if (un.amount) {
+  $('#home-unpaid').hidden = !(un.amount && un.month);   // 月が分からないものは出さない
+  if (un.amount && un.month) {
     $('#unpaid-amt').textContent = yen(un.amount);
     $('#unpaid-sub').textContent = `${monthLabel(un.month)}分・${PERSON[un.dir === 'wife_to_me' ? 'wife' : 'me']}が渡す`;
   }
@@ -241,13 +241,23 @@ $('#camera').addEventListener('change', async (e) => {
 // ===== ② 確認・仕訳 =====
 let draft = null;
 function makeDraft(mode) {
+  const t = new Date();
+  const today = `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
   if (mode === 'noitems') {
-    return { date: '2026-09-19', store: 'ドトール 三軒茶屋', payer: 'me', total: 880, hasItems: false,
+    return { date: today, store: 'ドトール 三軒茶屋', payer: 'me', total: 880, hasItems: false,
       photo: fakePhoto('ドトール 三軒茶屋'), items: [{ n: 'ドトール 三軒茶屋', a: 880, s: 'common', c: '外食' }] };
   }
-  return { date: '2026-09-19', store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, hasItems: true,
+  // 手元のレシートに頼らない（1枚も無い人でも押せるように）
+  return { date: today, store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, hasItems: true,
     photo: fakePhoto('ライフ 三軒茶屋'),
-    items: JSON.parse(JSON.stringify(receipts[0].items.filter((i) => !i.adjust))) };
+    items: [
+      { n: '牛乳 1L', a: 238, s: 'common', c: '食費' },
+      { n: '食パン 6枚', a: 168, s: 'common', c: '食費' },
+      { n: '鶏むね肉 500g', a: 498, s: 'common', c: '食費' },
+      { n: 'トイレットペーパー 12R', a: 598, s: 'common', c: '日用品' },
+      { n: 'スーパードライ 350ml', a: 228, s: 'me', c: '食費' },
+      { n: '本麒麟 350ml', a: 158, s: 'wife', c: '食費' },
+    ] };
 }
 function draftRows() {
   const rows = draft.items.map((i) => ({ ...i, a: Number(i.a) || 0 }));
@@ -300,13 +310,23 @@ $('#r-rows').addEventListener('click', (e) => {
   else return;
   drawRows();
 });
-$('#r-rows').addEventListener('change', (e) => {
+$('#r-rows').addEventListener('input', (e) => {
   const li = e.target.closest('.row'); const it = li && draft.items[li.dataset.i];
   if (!it) return;
   if (e.target.classList.contains('name')) it.n = e.target.value;
   if (e.target.classList.contains('amt')) it.a = Number(e.target.value) || 0;
-  drawRows();
+  syncAdjust();
 });
+// 打っている最中に一覧を作り直すと、打っている欄ごと消える。
+// 変わるのは「調整」行の金額と帯だけなので、そこだけ直す。
+function syncAdjust() {
+  const rows = draftRows();
+  const li = $('#r-rows .row.adjust');
+  const adj = rows.find((r) => r.adjust);
+  if (Boolean(adj) !== Boolean(li)) { drawRows(); return; }   // 行が増減するときだけ作り直す
+  if (li && adj) li.querySelector('.amt').value = adj.a;
+  drawTrack('s', shareTotals(rows.map((r) => ({ share: r.s, amount: r.a }))));
+}
 $('#bulk').addEventListener('click', (e) => {
   const b = e.target.closest('[data-bulk]'); if (!b) return;
   draft.items.forEach((i) => { i.s = b.dataset.bulk; i.rule = false; });
@@ -315,11 +335,25 @@ $('#bulk').addEventListener('click', (e) => {
 $('#add-row').addEventListener('click', () => {
   draft.items.push({ n: '', a: 0, s: 'common', c: 'その他' }); drawRows();
 });
-$('#r-total').addEventListener('change', (e) => { draft.total = Number(e.target.value) || 0; drawRows(); });
-$('#r-store').addEventListener('change', (e) => { draft.store = e.target.value.trim(); });
-$('#r-date').addEventListener('change', (e) => { if (e.target.value) draft.date = e.target.value; });
+$('#r-total').addEventListener('input', (e) => { draft.total = Number(e.target.value) || 0; drawRows(); });
+$('#r-store').addEventListener('input', (e) => { draft.store = e.target.value.trim(); });
+$('#r-date').addEventListener('input', (e) => { if (e.target.value) draft.date = e.target.value; });
 $('#r-payer').addEventListener('click', () => { draft.payer = other(draft.payer); $('#r-payer').textContent = PERSON[draft.payer]; });
+// 送る直前に画面の値をそのまま読み直す（イベントの取りこぼしに対する最後の砦）
+function syncDraft() {
+  draft.total = Number($('#r-total').value) || 0;
+  draft.store = $('#r-store').value.trim();
+  if ($('#r-date').value) draft.date = $('#r-date').value;
+  document.querySelectorAll('#r-rows .row').forEach((li) => {
+    const it = draft.items[li.dataset.i];
+    if (!it) return;                                   // 調整行は draft.items にない
+    const n = li.querySelector('.name'), a = li.querySelector('.amt');
+    if (n) it.n = n.value;
+    if (a) it.a = Number(a.value) || 0;
+  });
+}
 $('#r-send').addEventListener('click', async () => {
+  syncDraft();
   const rows = draftRows().filter((r) => r.a !== 0 || r.n);
   if (!rows.length) { alert('品目がありません'); return; }
   if (!Number(draft.total)) { alert('合計を入れてください'); $('#r-total').focus(); return; }
@@ -333,7 +367,7 @@ $('#r-send').addEventListener('click', async () => {
     const res = await API.call('save', body);
     month = draft.date.slice(0, 7);
     toast(res.photo_saved ? `保存しました（${res.saved}品目・写真つき）` : `保存しました（${res.saved}品目）`);
-    go('home');
+    go('list');            // 一覧が自分で読み直す。ここで読み直すと二重に取りに行くことになる
   } catch (e) {
     alert(`送れませんでした。\n${e.message}`);
   } finally {
@@ -381,7 +415,7 @@ $('#m-send').addEventListener('click', async () => {
     });
     month = date.slice(0, 7);
     toast('保存しました');
-    go('home');
+    go('list');
   } catch (e) {
     alert(`送れませんでした。\n${e.message}`);
   } finally {

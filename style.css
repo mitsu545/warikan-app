@@ -66,7 +66,9 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 body {
-  margin: 0 auto; padding: 22px 18px calc(104px + env(safe-area-inset-bottom));
+  /* --tabh は下タブの高さ。送るボタンと本文の下余白がこれを基準に避ける */
+  --tabh: 72px;
+  margin: 0 auto; padding: 22px 18px calc(var(--tabh) + 26px + env(safe-area-inset-bottom));
   max-width: 480px; background: var(--bg); color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   font-size: 16px; line-height: 1.55; font-variant-numeric: tabular-nums;
@@ -241,7 +243,7 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .ghost:active { box-shadow: var(--sh-up-sm); }
 
 /* 送信バー */
-.actionbar { position: sticky; bottom: 0; z-index: 5; margin: 18px -18px 0; padding: 14px 18px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 62%, transparent); }
+.actionbar { position: sticky; bottom: calc(var(--tabh) + env(safe-area-inset-bottom)); z-index: 11; margin: 18px -18px 0; padding: 14px 18px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 62%, transparent); }
 .submit { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 60px; border-radius: 18px; font-size: 19px; font-weight: 800; background: var(--accent); color: var(--accent-ink); box-shadow: 0 6px 20px rgba(35,44,74,.3); }
 .submit:disabled { background: var(--bg); color: var(--muted); box-shadow: var(--sh-in-sm); }
 .submit:active:not(:disabled) { box-shadow: inset 3px 3px 9px rgba(0,0,0,.32); }
@@ -303,12 +305,13 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .danger { width: 100%; min-height: 50px; border-radius: var(--r-sm); color: var(--danger); font-weight: 800; text-align: center; box-shadow: var(--sh-up-sm); margin-top: 8px; }
 
 /* タブバー */
-.tabbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 10; width: 100%; max-width: 480px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); box-shadow: 0 -8px 22px rgba(0,0,0,.10); }
-.tabbar button { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 54px; padding: 7px 0; border-radius: var(--r-sm); font-size: 11px; font-weight: 800; color: var(--muted); }
+/* 高さは --tabh で決める。送るボタンがこの値を基準に避けるので、ここだけで変えること */
+.tabbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 10; width: 100%; max-width: 480px; height: calc(var(--tabh) + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; gap: 4px; padding: 0 12px env(safe-area-inset-bottom); background: var(--bg); box-shadow: 0 -8px 22px rgba(0,0,0,.10); }
+.tabbar button { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; height: 58px; padding: 0; border-radius: var(--r-sm); font-size: 11px; font-weight: 800; color: var(--muted); }
 .tabbar button.is-active { color: var(--text); box-shadow: var(--sh-in-sm); }
 .tabbar .ico { width: 22px; height: 22px; }
 
-#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(104px + env(safe-area-inset-bottom)); z-index: 20; width: min(440px, calc(100% - 36px)); padding: 15px 18px; border-radius: var(--r-md); background: var(--accent); color: var(--accent-ink); font-size: 16px; font-weight: 800; text-align: center; box-shadow: 0 10px 26px rgba(0,0,0,.25); }
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabh) + 32px + env(safe-area-inset-bottom)); z-index: 20; width: min(440px, calc(100% - 36px)); padding: 15px 18px; border-radius: var(--r-md); background: var(--accent); color: var(--accent-ink); font-size: 16px; font-weight: 800; text-align: center; box-shadow: 0 10px 26px rgba(0,0,0,.25); }
 
 .view { animation: viewIn .24s ease both; }
 @keyframes viewIn { from { opacity: 0; transform: translateY(8px); } }
