@@ -307,8 +307,12 @@ function actionOcr(req) {
       payload: JSON.stringify(body), muteHttpExceptions: true
     });
   } catch (e) {
-    // e.message には URL が含まれることがあるため、そのままは返さない
-    return { ok: false, error: '読み取りに行けませんでした。通信を確認してください' };
+    // URL は取り除いてから返す（エラー文に混ざって画面に出るのを防ぐ）
+    var msg = String((e && e.message) || '').replace(/https?:\/\/\S+/g, '').trim();
+    if (/permission|権限|authoriz|承認/i.test(msg)) {
+      return { ok: false, error: '外部への通信が許可されていません。Apps Script で「テスト読み取り」を実行して承認し、新バージョンでデプロイしてください' };
+    }
+    return { ok: false, error: '読み取りに行けませんでした：' + (msg || '通信を確認してください') };
   }
 
   var code = res.getResponseCode();
