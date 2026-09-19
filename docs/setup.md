@@ -89,9 +89,11 @@ Google が「このアプリは確認されていません」と警告します�
 
 ## 8. GitHub Pages を有効にする（アプリの住所を作る）
 
-1. まず [プルリクエスト #1](https://github.com/mitsu545/warikan-app/pull/1) を **Merge** する
-2. [リポジトリの Pages 設定](https://github.com/mitsu545/warikan-app/settings/pages) を開く
-3. **Branch** で `main` と `/ (root)` を選び **Save**
+1. [リポジトリの Pages 設定](https://github.com/mitsu545/warikan-app/settings/pages) を開く
+2. **Branch** で `main` と `/ (root)` を選ぶ
+3. **Save** を押す
+
+> アプリを `main` に取り込む作業（Merge）は済んでいます。Pages を入にするだけです。
 
 ## 9. アプリの URL を開いてホーム画面に追加する
 
@@ -154,7 +156,7 @@ https://script.google.com/macros/s/（長い文字列）/exec
 
 | 症状 | 原因と直し方 |
 |---|---|
-| アプリの URL が 404 | プルリクエスト #1 を Merge していないか、Pages の Branch が `main` になっていない。反映に1〜2分かかる |
+| アプリの URL が 404 | Pages の Branch が `main`、フォルダが `/ (root)` か確認。反映に1〜2分かかる |
 | 「合言葉が違います」 | スクリプト プロパティの `SECRET` と、アプリに入れた合言葉が違う。前後の空白にも注意 |
 | 「つながりませんでした」 | URL が違う。`/exec` で終わっているか確認。`/dev` で終わるものは使えません |
 | 「サーバーが 401 / 403 を返しました」 | デプロイの「アクセスできるユーザー」が**全員**になっていない |
