@@ -21,7 +21,7 @@
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.5 12 20 4.6l-3.1 15.2-4.6-4.2z"/><path d="M12.3 15.6 9 19v-4.4L20 4.6"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10.2" width="16" height="9.8" rx="2.3"/><path d="M8.2 10.2V7.6a3.8 3.8 0 0 1 7.6 0v2.6"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7"/></symbol>
-  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4.5 8.5h14l-4-4M19.5 15.5h-14l4 4"/></symbol>
 </svg>
 
 <!-- ① ホーム -->
@@ -71,7 +71,7 @@
       <label class="field"><span>日付</span><input type="date" id="r-date"></label>
       <label class="field"><span>店名</span><input type="text" id="r-store"></label>
       <label class="field"><span>合計</span><input type="number" id="r-total" inputmode="numeric"></label>
-      <label class="field"><span>支払った人</span><button class="pill" id="r-payer" type="button">私</button></label>
+      <label class="field"><span>誰が払った？</span><button class="pill" id="r-payer" type="button">私</button></label>
     </div>
   </div>
 
@@ -91,7 +91,8 @@
     <button type="button" data-bulk="wife">全部 妻</button>
   </div>
 
-  <p class="hint">区分をタップ：共通 → 私 → 妻。費目もタップで変わります</p>
+    <p class="sec-label">誰の分？</p>
+  <p class="hint" style="margin-top:0">色の大きなボタンをタップすると 共通 → 私 → 妻 と変わります。左の小さなバッジは費目です</p>
   <ul id="r-rows" class="rows"></ul>
   <button class="ghost" id="add-row"><svg class="ico"><use href="#i-plus"/></svg><span id="add-row-txt">行を追加</span></button>
 
@@ -107,9 +108,12 @@
     <label class="field"><span>日付</span><input type="date" id="m-date"></label>
     <div class="field-grid">
       <label class="field"><span>費目</span><select id="m-cat"></select></label>
-      <label class="field"><span>区分</span><button class="pill" id="m-share" type="button">共通</button></label>
+      <label class="field"><span>誰が払った？</span><button class="pill" id="m-payer" type="button">私</button></label>
     </div>
-    <label class="field"><span>支払った人</span><button class="pill" id="m-payer" type="button">私</button></label>
+    <p class="sec-label" style="margin-top:6px">誰の分？</p>
+    <div class="row common" id="m-row" style="margin:0">
+      <div class="r-bot"><button class="share" id="m-share" type="button">共通<svg class="ico swap"><use href="#i-swap"/></svg></button></div>
+    </div>
   </div>
   <div class="actionbar"><button class="submit" data-go="home"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
 </section>
@@ -145,7 +149,8 @@
   <div class="card">
     <table class="calc"><tbody id="d-head"></tbody></table>
   </div>
-  <p class="hint">区分と費目はここでも直せます</p>
+  <p class="sec-label">誰の分？</p>
+  <p class="hint" style="margin-top:0">大きなボタンで支払対象、小さなバッジで費目を直せます</p>
   <ul id="d-rows" class="rows"></ul>
   <button class="danger" data-go="list">このレシートを削除</button>
 </section>
@@ -156,8 +161,8 @@
 
   <div class="card">
     <p class="field-title">今月の固定費を入れる</p>
-    <p class="hint" style="margin-top:-4px">毎月変わるものは空欄です。埋めないと締められません</p>
-    <div id="fx-list"></div>
+    <p class="hint" style="margin-top:0">毎月変わるものは空欄です。埋めないと締められません。<b>誰の分か</b>もここで変えられます</p>
+    <div id="fx-list" class="rows"></div>
     <button class="ghost" id="fx-add"><svg class="ico"><use href="#i-plus"/></svg>今月だけの項目を足す</button>
   </div>
 
@@ -254,8 +259,8 @@
 
   <div class="card">
     <p class="field-title">固定費テンプレート</p>
-    <p class="hint" style="margin-top:-4px">1回登録すれば毎月の締めで呼び出されます</p>
-    <div id="tpl-list"></div>
+    <p class="hint" style="margin-top:0">1回登録すれば毎月の締めで呼び出されます。誰が払うか・誰の分かはここで決めます</p>
+    <div id="tpl-list" class="rows"></div>
     <button class="ghost" id="tpl-add"><svg class="ico"><use href="#i-plus"/></svg>固定費を追加</button>
   </div>
 

@@ -8,6 +8,7 @@ const SHARE_LABEL = { common: '共通', me: '私', wife: '妻' };
 const PERSON = { me: '私', wife: '妻' };
 const CATS = ['食費', '外食', '日用品', '交通', '娯楽', '医療', '衣類', '水道光熱', '通信', 'その他'];
 
+const SWAP = '<svg class="ico swap"><use href="#i-swap"/></svg>';   // 「タップで切り替わる」印
 const $ = (s) => document.querySelector(s);
 const pad2 = (n) => String(n).padStart(2, '0');
 const yen = (n) => `${n.toLocaleString('ja-JP')}円`;
@@ -223,12 +224,13 @@ function drawRows() {
     li.dataset.i = i;
     const ro = it.adjust ? 'readonly' : '';
     li.innerHTML = `
-      <input class="name" type="text" value="${esc(it.n)}" ${ro}>
-      <div class="ctrl">
-        <input class="amt" type="number" inputmode="numeric" value="${it.a}" ${ro}>
-        <span class="cur">円</span>
+      <div class="r-top">
+        <input class="name" type="text" value="${esc(it.n)}" ${ro}>
+        <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${it.a}" ${ro}><span class="cur">円</span></div>
+      </div>
+      <div class="r-bot">
         <button class="cat" type="button" ${it.adjust ? 'disabled' : ''}>${it.c}</button>
-        <button class="share" type="button" ${it.adjust ? 'disabled' : ''}>${it.rule ? '<span class="rule">🔁</span>' : ''}${SHARE_LABEL[it.s]}</button>
+        <button class="share" type="button" ${it.adjust ? 'disabled' : ''} aria-label="誰の分か：${SHARE_LABEL[it.s]}。タップで変更">${it.rule ? '<span class="rule">🔁</span>' : ''}${SHARE_LABEL[it.s]}${it.adjust ? '' : SWAP}</button>
         ${it.adjust ? '' : '<button class="del" type="button" aria-label="削除">×</button>'}
       </div>`;
     ul.appendChild(li);
@@ -267,11 +269,14 @@ $('#r-send').addEventListener('click', () => toast('送りました（プロト�
 function renderManual() {
   $('#m-date').value = '2026-09-19';
   $('#m-cat').innerHTML = CATS.map((c) => `<option>${c}</option>`).join('');
+  drawManualShare();
 }
-$('#m-share').addEventListener('click', (e) => {
-  const cur = Object.entries(SHARE_LABEL).find(([, v]) => v === e.target.textContent)[0];
-  e.target.textContent = SHARE_LABEL[next(SHARES, cur)];
-});
+let mShare = 'common';
+function drawManualShare() {
+  $('#m-row').className = `row ${mShare}`;
+  $('#m-share').innerHTML = SHARE_LABEL[mShare] + SWAP;
+}
+$('#m-share').addEventListener('click', () => { mShare = next(SHARES, mShare); drawManualShare(); });
 $('#m-payer').addEventListener('click', (e) => { e.target.textContent = e.target.textContent === '私' ? '妻' : '私'; });
 
 // ===== ③ 明細（レシート単位）=====
@@ -322,11 +327,13 @@ function renderDetail() {
     const li = document.createElement('li');
     li.className = `row ${it.s}`; li.dataset.i = i;
     li.innerHTML = `
-      <div class="static">${esc(it.n)}</div>
-      <div class="ctrl">
-        <span class="amt" style="box-shadow:none">${yen(it.a)}</span>
+      <div class="r-top">
+        <span class="static">${esc(it.n)}</span>
+        <div class="r-amt"><span class="fixed">${yen(it.a)}</span></div>
+      </div>
+      <div class="r-bot">
         <button class="cat" type="button">${it.c}</button>
-        <button class="share" type="button">${SHARE_LABEL[it.s]}</button>
+        <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[it.s]}。タップで変更">${SHARE_LABEL[it.s]}${SWAP}</button>
         <button class="del" type="button" aria-label="削除">×</button>
       </div>`;
     ul.appendChild(li);
@@ -348,11 +355,24 @@ function renderClose() {
   fxMonth.forEach((f, i) => {
     const need = f.amount === null;
     const d = document.createElement('div');
-    d.className = `fx${need ? ' need' : ''}`;
+    d.className = `fx ${f.share}${need ? ' need' : ''}`;
+    d.dataset.i = i;
     d.innerHTML = `
-      <div><div class="nm">${esc(f.name)}</div>
-      <div class="sub">${PERSON[f.payer]}が支払い・${SHARE_LABEL[f.share]}${need ? `・未入力（先月 ${yen(LAST[f.id] ?? 0)}）` : ''}</div></div>
-      <input type="number" inputmode="numeric" data-i="${i}" value="${f.amount ?? ''}" placeholder="${LAST[f.id] ?? 0}">`;
+      <div class="r-top">
+        <span class="static">${esc(f.name)}</span>
+        <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${f.amount ?? ''}" placeholder="${LAST[f.id] ?? 0}"><span class="cur">円</span></div>
+      </div>
+      ${need ? `<p class="need-txt" style="margin:0 0 8px">未入力です（先月は ${yen(LAST[f.id] ?? 0)}）</p>` : ''}
+      <div class="r-bot">
+        <div class="pick payer-col">
+          <span class="pick-label">誰が払った？</span>
+          <button class="payer" type="button" aria-label="誰が払ったか：${PERSON[f.payer]}。タップで変更">${PERSON[f.payer]}${SWAP}</button>
+        </div>
+        <div class="pick share-col">
+          <span class="pick-label">誰の分？</span>
+          <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[f.share]}。タップで変更">${SHARE_LABEL[f.share]}${SWAP}</button>
+        </div>
+      </div>`;
     box.appendChild(d);
   });
 
@@ -389,9 +409,18 @@ function renderClose() {
     : '<svg class="ico"><use href="#i-lock"/></svg>この月を締める';
 }
 $('#fx-list').addEventListener('change', (e) => {
-  if (e.target.dataset.i === undefined) return;
+  const d = e.target.closest('.fx'); if (!d || !e.target.classList.contains('amt')) return;
   const v = e.target.value.trim();
-  fxMonth[e.target.dataset.i].amount = v === '' ? null : Number(v) || 0;
+  fxMonth[d.dataset.i].amount = v === '' ? null : Number(v) || 0;
+  renderClose();
+});
+// 固定費も「誰の分？」「誰が払った？」をここで変えられる
+$('#fx-list').addEventListener('click', (e) => {
+  const d = e.target.closest('.fx'); const f = d && fxMonth[d.dataset.i];
+  if (!f) return;
+  if (e.target.closest('.share')) f.share = next(SHARES, f.share);
+  else if (e.target.closest('.payer')) f.payer = other(f.payer);
+  else return;
   renderClose();
 });
 $('#fx-add').addEventListener('click', () => {
@@ -465,13 +494,44 @@ $('#s-hist').addEventListener('click', (e) => {
 
 // ===== ⑧ 設定 =====
 function renderSettings() {
-  $('#tpl-list').innerHTML = templates.map((t) => `
-    <div class="tpl">
-      <div><div class="nm">${esc(t.name)}</div>
-      <div class="sub">${PERSON[t.payer]}が支払い・${SHARE_LABEL[t.share]}${t.kind === 'fixed' ? `・毎月 ${yen(t.def)}` : ''}</div></div>
-      <span class="tag">${t.kind === 'fixed' ? '定額' : '毎月変わる'}</span>
+  $('#tpl-list').innerHTML = templates.map((t, i) => `
+    <div class="fx ${t.share}" data-i="${i}">
+      <div class="r-top">
+        <span class="static">${esc(t.name)}</span>
+        <div class="r-amt">${t.kind === 'fixed'
+          ? `<span class="fixed">${yen(t.def)}</span>`
+          : '<span class="cur">毎月入力</span>'}</div>
+      </div>
+      <div class="r-bot">
+        <div class="pick kind-col">
+          <span class="pick-label">種別</span>
+          <button class="kind" type="button">${t.kind === 'fixed' ? '定額' : '毎月'}${SWAP}</button>
+        </div>
+        <div class="pick payer-col">
+          <span class="pick-label">誰が払う？</span>
+          <button class="payer" type="button" aria-label="誰が払うか：${PERSON[t.payer]}。タップで変更">${PERSON[t.payer]}${SWAP}</button>
+        </div>
+        <div class="pick share-col">
+          <span class="pick-label">誰の分？</span>
+          <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[t.share]}。タップで変更">${SHARE_LABEL[t.share]}${SWAP}</button>
+        </div>
+      </div>
     </div>`).join('');
 }
+$('#tpl-list').addEventListener('click', (e) => {
+  const d = e.target.closest('.fx'); const t = d && templates[d.dataset.i];
+  if (!t) return;
+  if (e.target.closest('.share')) t.share = next(SHARES, t.share);
+  else if (e.target.closest('.payer')) t.payer = other(t.payer);
+  else if (e.target.closest('.kind')) t.kind = t.kind === 'fixed' ? 'variable' : 'fixed';
+  else return;
+  // テンプレートを変えたら、まだ締めていない今月分にも反映する
+  fxMonth = templates.map((x) => {
+    const cur = fxMonth.find((y) => y.id === x.id);
+    return { ...x, amount: x.kind === 'fixed' ? x.def : (cur ? cur.amount : null) };
+  });
+  renderSettings();
+});
 $('#tpl-add').addEventListener('click', () => toast('プロトタイプなので追加はできません'));
 
 go('home');
