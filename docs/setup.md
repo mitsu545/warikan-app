@@ -214,7 +214,17 @@ https://script.google.com/macros/s/（長い文字列）/exec
 **入った内容は必ず自分で確かめること。** 違っていれば送る前にその場で直せる。
 
 読み取りに使うモデルを変えたいときは、スクリプトプロパティに `GEMINI_MODEL` を足す。
-未設定なら `gemini-2.0-flash` を使う。
+未設定なら `gemini-3.6-flash` を使う。
+
+モデル名は Google 側の都合で変わる。実行ログに
+
+```
+"code": 404, "message": "This model models/xxx is no longer available.
+Please update your code to use models/yyy"
+```
+
+と出たら、返事に書かれている `yyy` を `GEMINI_MODEL` に入れる。
+**コードの貼り替えもデプロイも要らない**（スクリプトプロパティは実行のたびに読むため）。
 
 ⚠️ キーはスクリプトプロパティにだけ置く。コード・`.env`・GitHub には書かない。
 
