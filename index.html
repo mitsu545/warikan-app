@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>warikan v2 デザイン案</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 8.6A2.6 2.6 0 0 1 5.6 6h1.5a1 1 0 0 0 .82-.43l.93-1.34A1 1 0 0 1 9.67 4h4.66a1 1 0 0 1 .82.43l.93 1.34A1 1 0 0 0 16.9 6h1.5A2.6 2.6 0 0 1 21 8.6v8.8a2.6 2.6 0 0 1-2.6 2.6H5.6A2.6 2.6 0 0 1 3 17.4z"/><circle cx="12" cy="13" r="3.6"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M16.4 4.6a2.2 2.2 0 0 1 3.1 3.1L8.2 19l-4.2 1.1L5.1 16z"/><path d="M14.6 6.4 17.8 9.6"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.4 12 4l8 6.4v8.2A1.4 1.4 0 0 1 18.6 20H5.4A1.4 1.4 0 0 1 4 18.6z"/><path d="M9.6 20v-5.4h4.8V20"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.6" cy="6.5" r="1.2"/><circle cx="4.6" cy="12" r="1.2"/><circle cx="4.6" cy="17.5" r="1.2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4"/><path d="M4 20h16"/><rect x="7.5" y="12" width="3.6" height="5"/><rect x="13.5" y="7.5" width="3.6" height="9.5"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><path d="M4 7.5h8M16.5 7.5H20M4 16.5h3.5M12 16.5h8"/><circle cx="14.2" cy="7.5" r="2.3"/><circle cx="9.8" cy="16.5" r="2.3"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.5 12 20 4.6l-3.1 15.2-4.6-4.2z"/><path d="M12.3 15.6 9 19v-4.4L20 4.6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10.2" width="16" height="9.8" rx="2.3"/><path d="M8.2 10.2V7.6a3.8 3.8 0 0 1 7.6 0v2.6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4.5 8.5h14l-4-4M19.5 15.5h-14l4 4"/></symbol>
+</svg>
+
+<!-- ① ホーム -->
+<section id="v-home" class="view">
+  <header class="apphead"><h1 class="logo">warikan</h1><span class="month" id="home-month"></span></header>
+
+  <div class="hero raised">
+    <p class="hero-label">今月の精算（レシート分）</p>
+    <p class="hero-amount"><span id="home-amount">0</span><span class="unit">円</span></p>
+    <div class="hero-flow" id="home-flow"></div>
+  </div>
+  <p class="hint center">固定費は月末の「締める」で加算されます</p>
+
+  <button class="notice" id="home-unpaid" data-go="settle" hidden>
+    <span class="notice-dot"></span>
+    <span class="grow">未精算 <b id="unpaid-amt"></b><small id="unpaid-sub"></small></span>
+    <svg class="ico"><use href="#i-back"/></svg>
+  </button>
+
+  <button class="action primary" data-go="review" data-mode="items">
+    <svg class="ico"><use href="#i-camera"/></svg>
+    <span class="action-txt">レシートを撮る<small>読み取りは段階3。いまは見本の明細が出ます</small></span>
+  </button>
+  <button class="action" data-go="review" data-mode="noitems">
+    <svg class="ico"><use href="#i-camera"/></svg>
+    <span class="action-txt">明細なしのレシート<small>合計だけの1行モードを見る</small></span>
+  </button>
+  <button class="action" data-go="manual">
+    <svg class="ico"><use href="#i-pen"/></svg>
+    <span class="action-txt">金額だけ入力<small>立て替え・現金用</small></span>
+  </button>
+</section>
+
+<!-- ② 確認・仕訳 -->
+<section id="v-review" class="view" hidden>
+  <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>確認・仕訳</h2></header>
+
+  <div class="notice" id="noitems-banner" hidden>
+    <span class="notice-dot"></span>
+    <span class="grow">明細が読み取れませんでした<small>合計だけで登録します。区分を選んで送るだけです</small></span>
+  </div>
+
+  <img class="photo" id="r-photo" alt="レシートの写真">
+
+  <div class="card">
+    <div class="field-grid">
+      <label class="field"><span>日付</span><input type="date" id="r-date"></label>
+      <label class="field"><span>店名</span><input type="text" id="r-store"></label>
+      <label class="field"><span>合計</span><input type="number" id="r-total" inputmode="numeric"></label>
+      <label class="field"><span>誰が払った？</span><button class="pill" id="r-payer" type="button">私</button></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="track"><span class="seg common" id="sg-common"></span><span class="seg me" id="sg-me"></span><span class="seg wife" id="sg-wife"></span></div>
+    <ul class="legend">
+      <li><i class="dot common"></i>共通 <b id="sm-common">0円</b></li>
+      <li><i class="dot me"></i>私 <b id="sm-me">0円</b></li>
+      <li><i class="dot wife"></i>妻 <b id="sm-wife">0円</b></li>
+    </ul>
+  </div>
+
+  <div class="bulk" id="bulk">
+    <span class="bulk-label">まとめて</span>
+    <button type="button" data-bulk="common">全部 共通</button>
+    <button type="button" data-bulk="me">全部 私</button>
+    <button type="button" data-bulk="wife">全部 妻</button>
+  </div>
+
+    <p class="sec-label">誰の分？</p>
+  <p class="hint" style="margin-top:0">色の大きなボタンをタップすると 共通 → 私 → 妻 と変わります。左の小さなバッジは費目です</p>
+  <ul id="r-rows" class="rows"></ul>
+  <button class="ghost" id="add-row"><svg class="ico"><use href="#i-plus"/></svg><span id="add-row-txt">行を追加</span></button>
+
+  <div class="actionbar"><button class="submit" data-go="home" id="r-send"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
+</section>
+
+<!-- ②' 金額だけ入力 -->
+<section id="v-manual" class="view" hidden>
+  <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>金額だけ入力</h2></header>
+  <div class="card">
+    <label class="field"><span>金額</span><input type="number" inputmode="numeric" placeholder="0" value="1200"></label>
+    <label class="field"><span>メモ</span><input type="text" placeholder="例：ランチ立て替え"></label>
+    <label class="field"><span>日付</span><input type="date" id="m-date"></label>
+    <div class="field-grid">
+      <label class="field"><span>費目</span><select id="m-cat"></select></label>
+      <label class="field"><span>誰が払った？</span><button class="pill" id="m-payer" type="button">私</button></label>
+    </div>
+    <p class="sec-label" style="margin-top:6px">誰の分？</p>
+    <div class="row common" id="m-row" style="margin:0">
+      <div class="r-bot"><button class="share" id="m-share" type="button">共通<svg class="ico swap"><use href="#i-swap"/></svg></button></div>
+    </div>
+  </div>
+  <div class="actionbar"><button class="submit" data-go="home"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
+</section>
+
+<!-- ③ 明細（レシート単位） -->
+<section id="v-list" class="view" hidden>
+  <header class="apphead"><h1 class="logo">明細</h1></header>
+  <div class="notice" id="demo-banner" hidden>
+    <span class="notice-dot"></span>
+    <span class="grow">デモのデータです<small>設定で GAS の URL と合言葉を入れると本物になります</small></span>
+  </div>
+  <div class="monthnav">
+    <button type="button" id="prev-m"><svg class="ico"><use href="#i-back"/></svg></button>
+    <span id="list-month"></span>
+    <button type="button" id="next-m"><svg class="ico flip"><use href="#i-back"/></svg></button>
+  </div>
+  <div class="card">
+    <div class="track"><span class="seg common" id="lg-common"></span><span class="seg me" id="lg-me"></span><span class="seg wife" id="lg-wife"></span></div>
+    <ul class="legend">
+      <li><i class="dot common"></i>共通 <b id="lm-common">0円</b></li>
+      <li><i class="dot me"></i>私 <b id="lm-me">0円</b></li>
+      <li><i class="dot wife"></i>妻 <b id="lm-wife">0円</b></li>
+    </ul>
+  </div>
+  <p class="hint">レシートをタップすると写真と品目が開きます</p>
+  <div id="list-cards"></div>
+  <button class="action" data-go="close">
+    <svg class="ico"><use href="#i-lock"/></svg>
+    <span class="action-txt">この月を締める<small>固定費を足して精算額を確定</small></span>
+  </button>
+</section>
+
+<!-- ④ レシート詳細 -->
+<section id="v-detail" class="view" hidden>
+  <header class="subhead"><button class="iconbtn" data-go="list"><svg class="ico"><use href="#i-back"/></svg></button><h2 id="d-title">レシート</h2></header>
+  <div id="d-photo"></div>
+  <div class="card">
+    <table class="calc"><tbody id="d-head"></tbody></table>
+  </div>
+  <p class="sec-label">誰の分？</p>
+  <p class="hint" style="margin-top:0">大きなボタンで支払対象、小さなバッジで費目を直せます</p>
+  <ul id="d-rows" class="rows"></ul>
+  <button class="danger" data-go="list">このレシートを削除</button>
+</section>
+
+<!-- ⑤ 月末締め -->
+<section id="v-close" class="view" hidden>
+  <header class="subhead"><button class="iconbtn" data-go="list"><svg class="ico"><use href="#i-back"/></svg></button><h2>月末締め</h2></header>
+
+  <div class="card">
+    <p class="field-title">この月の固定費を入れる</p>
+    <p class="hint" id="c-range" style="margin-top:0"></p>
+    <p class="hint" style="margin-top:0">毎月変わるものは空欄です。埋めないと締められません。<b>誰の分か</b>もここで変えられます</p>
+    <div id="fx-list" class="rows"></div>
+    <button class="ghost" id="fx-add"><svg class="ico"><use href="#i-plus"/></svg>今月だけの項目を足す</button>
+  </div>
+
+  <div class="hero raised">
+    <p class="hero-label" id="c-month"></p>
+    <p class="hero-amount"><span id="c-amount">0</span><span class="unit">円</span></p>
+    <div class="hero-flow" id="c-flow"></div>
+  </div>
+
+  <div class="card">
+    <p class="field-title">何を合計したか</p>
+    <table class="calc"><tbody id="c-parts"></tbody></table>
+  </div>
+  <div class="card">
+    <p class="field-title">計算の内訳</p>
+    <table class="calc" id="c-table"></table>
+    <p class="hint" id="c-note"></p>
+  </div>
+
+  <div class="actionbar"><button class="submit" id="c-do"><svg class="ico"><use href="#i-lock"/></svg>この月を締める</button></div>
+</section>
+
+<!-- ⑥ 分析 -->
+<section id="v-stats" class="view" hidden>
+  <header class="apphead"><h1 class="logo">分析</h1><span class="month" id="stats-month"></span></header>
+
+  <div class="card">
+    <p class="field-title">費目別の支出（今月）</p>
+    <div class="chart" id="cat-chart"></div>
+  </div>
+
+  <div class="card">
+    <p class="field-title">誰のものか</p>
+    <div class="track"><span class="seg common" id="tg-common"></span><span class="seg me" id="tg-me"></span><span class="seg wife" id="tg-wife"></span></div>
+    <ul class="legend">
+      <li><i class="dot common"></i>共通 <b id="tm-common">0円</b></li>
+      <li><i class="dot me"></i>私 <b id="tm-me">0円</b></li>
+      <li><i class="dot wife"></i>妻 <b id="tm-wife">0円</b></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <p class="field-title">先月との比較</p>
+    <div id="compare"></div>
+  </div>
+</section>
+
+<!-- ⑦ 精算の記録 -->
+<section id="v-settle" class="view" hidden>
+  <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>精算の記録</h2></header>
+
+  <div class="hero raised">
+    <p class="hero-label">未精算</p>
+    <p class="hero-amount"><span id="s-amount">0</span><span class="unit">円</span></p>
+    <div class="hero-flow" id="s-flow"></div>
+  </div>
+
+  <div class="card">
+    <p class="field-title">渡した／受け取ったを記録する</p>
+    <p class="hint" style="margin-top:0"><b id="s-month"></b>の精算です。記録する日付は今日でかまいません</p>
+    <div class="field-grid">
+      <label class="field"><span>日付</span><input type="date" id="s-date"></label>
+      <label class="field"><span>金額</span><input type="number" id="s-amt" inputmode="numeric"></label>
+      <label class="field"><span>向き</span><button class="pill" id="s-dir" type="button">妻 → 私</button></label>
+      <label class="field"><span>方法</span><select id="s-method"><option>振込</option><option>現金</option><option>PayPay</option><option>その他</option></select></label>
+    </div>
+    <label class="field"><span>メモ</span><input type="text" id="s-memo" placeholder="例：9月分"></label>
+    <button class="submit" id="s-save" style="min-height:52px;font-size:17px"><svg class="ico"><use href="#i-check"/></svg>記録する</button>
+  </div>
+
+  <div class="card">
+    <p class="field-title">これまでの精算</p>
+    <div id="s-hist"></div>
+  </div>
+</section>
+
+<!-- ⑧ 設定 -->
+<section id="v-settings" class="view" hidden>
+  <header class="apphead"><h1 class="logo">設定</h1></header>
+
+  <div class="card">
+    <p class="field-title">このスマホの持ち主</p>
+    <div class="segmented">
+      <label><input type="radio" name="owner" value="me" checked><span>私</span></label>
+      <label><input type="radio" name="owner" value="wife"><span>妻</span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="field-title">つなぎ先</p>
+    <label class="field"><span>GAS の Web App URL</span><input type="text" id="cfg-url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label class="field"><span>合言葉</span><input type="text" id="cfg-secret" placeholder="2人で決めた合言葉"></label>
+    <button class="submit" id="cfg-test" style="min-height:52px;font-size:17px"><svg class="ico"><use href="#i-check"/></svg>保存してつながるか試す</button>
+    <p class="hint" id="cfg-state"></p>
+    <p class="hint">この2つはこの端末の中だけに保存されます。リポジトリには入りません</p>
+  </div>
+
+  <div class="card">
+    <p class="field-title">固定費テンプレート</p>
+    <p class="hint" style="margin-top:0">1回登録すれば毎月の締めで呼び出されます。誰が払うか・誰の分かはここで決めます</p>
+    <div id="tpl-list" class="rows"></div>
+    <button class="ghost" id="tpl-add"><svg class="ico"><use href="#i-plus"/></svg>固定費を追加</button>
+  </div>
+
+  <div class="card">
+    <p class="field-title">レシート写真</p>
+    <label class="field"><span>保存期間</span><select id="keep"><option>2か月（62日）</option><option>6か月</option><option>1年</option><option>ずっと残す</option></select></label>
+    <p class="hint">Google ドライブに保存します。期間を過ぎた写真は自動で消えます。文字のデータは残ります</p>
+  </div>
+
+  <button class="danger">端末内のデータを全部消す</button>
+</section>
+
+<nav class="tabbar" id="tabbar">
+  <button data-go="home" data-tab="home"><svg class="ico"><use href="#i-home"/></svg><span>ホーム</span></button>
+  <button data-go="list" data-tab="list"><svg class="ico"><use href="#i-list"/></svg><span>明細</span></button>
+  <button data-go="stats" data-tab="stats"><svg class="ico"><use href="#i-chart"/></svg><span>分析</span></button>
+  <button data-go="settings" data-tab="settings"><svg class="ico"><use href="#i-cog"/></svg><span>設定</span></button>
+</nav>
+
+<div id="toast" hidden></div>
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
