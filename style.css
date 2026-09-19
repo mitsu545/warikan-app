@@ -156,6 +156,12 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .monthnav button:active { box-shadow: var(--sh-in-sm); }
 .monthnav button:disabled { opacity: .3; box-shadow: none; }
 
+/* 裏で最新を取りに行っているときの小さな印（画面は止めない） */
+.sync { margin: -6px 2px 10px; font-size: 12px; color: var(--muted); }
+.sync::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 7px;
+  border-radius: 50%; background: var(--warn); animation: syncPulse 1.1s ease-in-out infinite; }
+@keyframes syncPulse { 50% { opacity: .25; } }
+
 /* レシートカード */
 .rcard { display: grid; grid-template-columns: 54px 1fr; gap: 12px; width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 18px; box-shadow: var(--sh-up-sm); }
 .rcard .thumb { width: 54px; height: 54px; border-radius: 12px; object-fit: cover; box-shadow: var(--sh-in-sm); }
