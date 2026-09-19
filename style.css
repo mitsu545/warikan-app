@@ -66,7 +66,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 body {
-  margin: 0 auto; padding: 22px 18px calc(100px + env(safe-area-inset-bottom));
+  margin: 0 auto; padding: 22px 18px calc(104px + env(safe-area-inset-bottom));
   max-width: 480px; background: var(--bg); color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   font-size: 16px; line-height: 1.55; font-variant-numeric: tabular-nums;
@@ -82,6 +82,13 @@ body {
 .logo { margin: 0; font-size: 27px; font-weight: 800; letter-spacing: -.01em; }
 .month { color: var(--muted); font-size: 13px; font-weight: 700; }
 .subhead { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+
+/* 各画面の「ここで何をするか」の一行説明 */
+.purpose { margin: -10px 0 18px; padding: 11px 14px; border-radius: 14px;
+  background: var(--bg); box-shadow: var(--sh-in-sm);
+  color: var(--muted); font-size: 13px; line-height: 1.55; }
+.purpose b { color: var(--text); }
+.purpose.warn { box-shadow: var(--sh-in-sm), inset 0 0 0 2px var(--danger); color: var(--text); }
 .subhead h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
 
 .card { background: var(--bg); box-shadow: var(--sh-up); border-radius: var(--r-lg); padding: 16px; margin-bottom: 14px; }
@@ -296,7 +303,7 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .danger { width: 100%; min-height: 50px; border-radius: var(--r-sm); color: var(--danger); font-weight: 800; text-align: center; box-shadow: var(--sh-up-sm); margin-top: 8px; }
 
 /* タブバー */
-.tabbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 10; width: 100%; max-width: 480px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); box-shadow: 0 -6px 18px rgba(0,0,0,.08); }
+.tabbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 10; width: 100%; max-width: 480px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); box-shadow: 0 -8px 22px rgba(0,0,0,.10); }
 .tabbar button { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 54px; padding: 7px 0; border-radius: var(--r-sm); font-size: 11px; font-weight: 800; color: var(--muted); }
 .tabbar button.is-active { color: var(--text); box-shadow: var(--sh-in-sm); }
 .tabbar .ico { width: 22px; height: 22px; }
