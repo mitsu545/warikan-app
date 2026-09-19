@@ -360,9 +360,42 @@ function normalizeOcr(text) {
   return { store: String(o.store || '').trim().slice(0, 60), date: date, total: total, items: items };
 }
 
-// 読み取りを試すとき用（エディタから実行する）
+// 読み取りの調子を調べる（Apps Script のエディタから実行し、実行ログを見る）
+// 何が起きているかをそのまま出す。キーの中身は絶対に出さない。
 function テスト読み取り() {
-  Logger.log(geminiModel() + ' / キー登録：' + (prop('GEMINI_KEY') ? 'あり' : 'なし'));
+  var key = prop('GEMINI_KEY');
+  var out = [];
+  out.push('■ このコードの版：段階3（読み取りあり）');
+  out.push('■ モデル：' + geminiModel());
+  out.push('■ GEMINI_KEY：' + (key ? '登録あり（' + key.length + '文字）' : '★未登録★'));
+  if (!key) {
+    out.push('→ スクリプトプロパティに GEMINI_KEY を登録してください');
+    Logger.log(out.join('\n')); return out.join('\n');
+  }
+
+  // 1x1 の白い画像で、実際に Gemini まで行けるか試す
+  var png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  try {
+    var res = UrlFetchApp.fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + geminiModel() + ':generateContent',
+      { method: 'post', contentType: 'application/json',
+        headers: { 'x-goog-api-key': key },
+        payload: JSON.stringify({ contents: [{ parts: [
+          { text: 'この画像に何が写っていますか。10文字以内で答えてください。' },
+          { inline_data: { mime_type: 'image/png', data: png } }
+        ] }] }),
+        muteHttpExceptions: true });
+    out.push('■ 通信：できた');
+    out.push('■ 返事の番号：' + res.getResponseCode() + '（200 なら成功）');
+    out.push('■ 返事の中身（先頭300文字）：');
+    out.push(String(res.getContentText()).slice(0, 300));
+  } catch (e) {
+    out.push('■ 通信：★できなかった★');
+    out.push('■ そのままのエラー：' + String((e && e.message) || e).replace(key, '＜キー＞'));
+    out.push('→ 「permission」「権限」と出ていたら、承認がまだです');
+  }
+  Logger.log(out.join('\n'));
+  return out.join('\n');
 }
 
 // ===== 写真の自動削除（1日1回） =====
