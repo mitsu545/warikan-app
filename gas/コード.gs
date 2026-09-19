@@ -266,7 +266,10 @@ function actionPhoto(req) {
 // 写真を Gemini に渡して 店名・日付・合計・品目 を読ませる。
 // API キーはスクリプトプロパティ GEMINI_KEY にだけ置く。コードには書かない。
 
-function geminiModel() { return prop('GEMINI_MODEL') || 'gemini-2.0-flash'; }
+// モデル名は変わることがある。404 で「no longer available」と言われたら、
+// 返事に書かれている新しい名前をスクリプトプロパティ GEMINI_MODEL に入れれば
+// コードを貼り替えずに切り替えられる。
+function geminiModel() { return prop('GEMINI_MODEL') || 'gemini-3.6-flash'; }
 
 var OCR_PROMPT = [
   'これは日本のレシートの写真です。書かれている内容だけを読み取ってください。',
@@ -386,7 +389,13 @@ function テスト読み取り() {
         ] }] }),
         muteHttpExceptions: true });
     out.push('■ 通信：できた');
-    out.push('■ 返事の番号：' + res.getResponseCode() + '（200 なら成功）');
+    var c = res.getResponseCode();
+    out.push('■ 返事の番号：' + c + '（200 なら成功）');
+    if (c === 404 && /no longer available/.test(res.getContentText())) {
+      out.push('→ モデル名が古い。下の返事に書かれた新しい名前を');
+      out.push('   スクリプトプロパティ GEMINI_MODEL に入れれば直る');
+    }
+    if (c === 403 || c === 400) out.push('→ GEMINI_KEY が違うかもしれない');
     out.push('■ 返事の中身（先頭300文字）：');
     out.push(String(res.getContentText()).slice(0, 300));
   } catch (e) {
