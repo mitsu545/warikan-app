@@ -1,51 +1,116 @@
-// warikan-app v1 段階1：GAS なし・ダミーデータで「撮る → 仕訳 → 精算額」を動かす
+/* warikan v2 デザインプロトタイプ
+   ダミーデータで画面と計算を確かめるためのもの。GAS にはつながっていない。 */
 'use strict';
 
 // ===== 定数 =====
-const SHARES = ['common', 'me', 'wife'];                 // タップで回る順
+const SHARES = ['common', 'me', 'wife'];
 const SHARE_LABEL = { common: '共通', me: '私', wife: '妻' };
-const PERSON_LABEL = { me: '私', wife: '妻' };
-const LS = {
-  settings: 'warikan.settings', entries: 'warikan.entries', draft: 'warikan.draft',
-  fixed: 'warikan.fixed', closes: 'warikan.closes',
-};
+const PERSON = { me: '私', wife: '妻' };
+const CATS = ['食費', '外食', '日用品', '交通', '娯楽', '医療', '衣類', '水道光熱', '通信', 'その他'];
 
-// ===== 端末内の保存（localStorage）=====
-const store = {
-  get(key, fallback) {
-    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
-  },
-  set(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
-};
-let settings = store.get(LS.settings, { owner: 'me' });   // このスマホの持ち主
-let entries = store.get(LS.entries, []);                  // 送信済みの明細（仕様書 7 章の列）
-let draft = store.get(LS.draft, null);                    // 確認中のレシート（未送信）
-let fixedCosts = store.get(LS.fixed, []);                 // 固定費（家賃・光熱費・サブスク）
-let closes = store.get(LS.closes, {});                    // 締めた月の記録（月をキーにする）
-let viewMonth = null;                                     // 明細・締めで見ている月
-
-// ===== 小道具 =====
-const $ = (sel) => document.querySelector(sel);
+const SWAP = '<svg class="ico swap"><use href="#i-swap"/></svg>';   // 「タップで切り替わる」印
+const $ = (s) => document.querySelector(s);
 const pad2 = (n) => String(n).padStart(2, '0');
-const fmtDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const fmtDateTime = (d) => `${fmtDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-const today = () => fmtDate(new Date());
-const thisMonth = () => today().slice(0, 7);
 const yen = (n) => `${n.toLocaleString('ja-JP')}円`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const nextShare = (s) => SHARES[(SHARES.indexOf(s) + 1) % SHARES.length];
-const otherPerson = (p) => (p === 'me' ? 'wife' : 'me');
+const next = (arr, v) => arr[(arr.indexOf(v) + 1) % arr.length];
+const other = (p) => (p === 'me' ? 'wife' : 'me');
+const monthLabel = (m) => { const [y, mm] = m.split('-'); return `${y}年${Number(mm)}月`; };
 
-function toast(msg) {
-  const el = $('#toast');
-  el.textContent = msg;
-  el.hidden = false;
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { el.hidden = true; }, 2500);
+// ダミーのレシート写真（本物の画像は使わず、それらしい絵を canvas で作る）
+function fakePhoto(seed, w = 520, h = 340) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#d9d2c7'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#efeae1'; g.fillRect(w * 0.16, 8, w * 0.68, h - 16);
+  g.fillStyle = '#8a8378';
+  g.font = 'bold 20px sans-serif'; g.fillText(seed, w * 0.22, 48);
+  g.font = '13px sans-serif';
+  for (let i = 0; i < 9; i++) {
+    const y = 76 + i * 26;
+    g.fillRect(w * 0.22, y, w * 0.34 * (0.5 + ((i * 7) % 10) / 20), 7);
+    g.fillRect(w * 0.66, y, 42, 7);
+  }
+  return c.toDataURL('image/jpeg', 0.7);
 }
 
-// ===== 精算の計算（仕様書 6 章）=====
-// 自分の負担（共通の月合計÷2 切り捨て ＋ 自分専用分）− 自分が払った額 ＝ 相手に渡す額
+// ===== ダミーデータ（2026年9月・8月） =====
+const THIS_M = '2026-09', PREV_M = '2026-08';
+let month = THIS_M;
+
+let receipts = [
+  { id: 'r1', month: THIS_M, date: '2026-09-17', store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, photo: 1, hasItems: true, items: [
+    { n: 'スーパードライ 350ml', a: 228, s: 'me', c: '食費', rule: true },
+    { n: '本麒麟 350ml', a: 158, s: 'wife', c: '食費', rule: true },
+    { n: '牛乳 1L', a: 238, s: 'common', c: '食費' },
+    { n: '食パン 6枚', a: 168, s: 'common', c: '食費' },
+    { n: '鶏むね肉 500g', a: 498, s: 'common', c: '食費' },
+    { n: 'トイレットペーパー 12R', a: 598, s: 'common', c: '日用品' },
+    { n: 'ヨーグルト', a: 198, s: 'common', c: '食費' },
+    { n: '割引', a: -50, s: 'common', c: '食費' },
+    { n: '調整（税・割引）', a: 264, s: 'common', c: '食費', adjust: true },
+  ] },
+  { id: 'r2', month: THIS_M, date: '2026-09-15', store: 'スターバックス 渋谷', payer: 'wife', total: 1340, photo: 1, hasItems: false, items: [
+    { n: 'スターバックス 渋谷', a: 1340, s: 'common', c: '外食' },
+  ] },
+  { id: 'r3', month: THIS_M, date: '2026-09-12', store: 'マツモトキヨシ', payer: 'me', total: 3280, photo: 1, hasItems: true, items: [
+    { n: '化粧水', a: 1980, s: 'wife', c: '日用品' },
+    { n: 'シャンプー 詰替', a: 698, s: 'common', c: '日用品' },
+    { n: '絆創膏', a: 328, s: 'common', c: '医療' },
+    { n: 'のど飴', a: 274, s: 'common', c: '食費' },
+  ] },
+  { id: 'r4', month: THIS_M, date: '2026-09-08', store: 'JR東日本', payer: 'me', total: 1520, photo: 0, hasItems: false, items: [
+    { n: 'JR東日本', a: 1520, s: 'me', c: '交通' },
+  ] },
+  { id: 'r5', month: THIS_M, date: '2026-09-05', store: '業務スーパー', payer: 'wife', total: 4120, photo: 1, hasItems: true, items: [
+    { n: '冷凍うどん 5食', a: 258, s: 'common', c: '食費' },
+    { n: '豚こま 1kg', a: 980, s: 'common', c: '食費' },
+    { n: '玉ねぎ 3kg', a: 498, s: 'common', c: '食費' },
+    { n: '洗剤 詰替', a: 348, s: 'common', c: '日用品' },
+    { n: '妻の化粧品', a: 1680, s: 'wife', c: '日用品' },
+    { n: 'コーヒー豆', a: 356, s: 'me', c: '食費' },
+  ] },
+  { id: 'r6', month: THIS_M, date: '2026-09-03', store: '手入力', payer: 'wife', total: 3600, photo: 0, hasItems: false, items: [
+    { n: '友人の結婚祝い（2人から）', a: 3600, s: 'common', c: '娯楽' },
+  ] },
+  { id: 'r7', month: PREV_M, date: '2026-08-20', store: 'ライフ 三軒茶屋', payer: 'me', total: 5200, photo: 0, hasItems: false, items: [
+    { n: 'ライフ 三軒茶屋', a: 5200, s: 'common', c: '食費' },
+  ] },
+  { id: 'r8', month: PREV_M, date: '2026-08-11', store: '外食 まとめ', payer: 'wife', total: 8400, photo: 0, hasItems: false, items: [
+    { n: '外食 まとめ', a: 8400, s: 'common', c: '外食' },
+  ] },
+];
+receipts.forEach((r) => { if (r.photo) r.photoData = fakePhoto(r.store); });
+
+// 固定費テンプレート（設定で1回登録）
+const templates = [
+  { id: 'f1', name: '家賃', kind: 'fixed', def: 120000, payer: 'me', share: 'common' },
+  { id: 'f2', name: '電気代', kind: 'variable', def: 0, payer: 'me', share: 'common' },
+  { id: 'f3', name: 'ガス代', kind: 'variable', def: 0, payer: 'me', share: 'common' },
+  { id: 'f4', name: '水道代', kind: 'variable', def: 0, payer: 'me', share: 'common' },
+  { id: 'f5', name: 'Netflix', kind: 'fixed', def: 1590, payer: 'me', share: 'common' },
+  { id: 'f6', name: '妻のジム', kind: 'fixed', def: 8800, payer: 'wife', share: 'wife' },
+];
+const LAST = { f2: 9840, f3: 4380, f4: 4200 };    // 先月の実額（初期値のヒントに使う）
+const LAST0 = { f2: 9120, f3: 5210, f4: 0 };      // 8月の実額（締め済み）
+// その月の実額。月ごとに持つ（変動費は未入力＝null から始める）
+const blankMonth = () => templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : null }));
+const fxByMonth = {
+  '2026-09': blankMonth(),
+  '2026-08': templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : (LAST0[t.id] ?? 0) })),
+};
+const fxOf = (m) => (fxByMonth[m] ||= blankMonth());
+
+// 精算の記録
+// 7月は精算済み、8月は締めたが未精算 → ホームに「未精算」が出る状態を見せる
+let settles = [{ id: 'p1', date: '2026-08-02', month: '2026-07', dir: 'wife_to_me', amount: 38600, method: '振込', memo: '' }];
+let settleMonth = '2026-08';   // いま精算しようとしている月
+let closed = {
+  '2026-07': { amount: 38600, dir: 'wife_to_me' },
+  '2026-08': { amount: 42180, dir: 'wife_to_me' },
+};
+
+// ===== 計算（仕様書 11 章）=====
 function calc(rows) {
   const paid = { me: 0, wife: 0 }, own = { me: 0, wife: 0 };
   let common = 0;
@@ -53,463 +118,508 @@ function calc(rows) {
     paid[r.payer] += r.amount;
     if (r.share === 'common') common += r.amount; else own[r.share] += r.amount;
   }
-  const half = Math.floor(common / 2);   // 端数は切り捨て（月合計で1回だけ）
+  const half = Math.floor(common / 2);
   const burden = { me: half + own.me, wife: half + own.wife };
-  const diff = burden.me - paid.me;      // 正なら私 → 妻、負なら妻 → 私
-  return { paid, own, burden, common, half,
-    amount: Math.abs(diff), direction: diff > 0 ? 'me_to_wife' : diff < 0 ? 'wife_to_me' : 'none' };
+  const diff = burden.me - paid.me;
+  return { paid, own, burden, common, half, amount: Math.abs(diff),
+    dir: diff > 0 ? 'me_to_wife' : diff < 0 ? 'wife_to_me' : 'none' };
 }
-const monthEntries = (month) => entries.filter((e) => e.month === month);
-const activeFixed = () => fixedCosts.filter((f) => f.active && f.amount);
-// ホームと一覧はレシート分だけ。固定費は「締める」時に足す（仕様書 5-4）
-const settlement = (month) => calc(monthEntries(month));
-function settleText(month) {
-  const s = settlement(month);
-  const head = month === thisMonth() ? '今月の精算' : `${monthLabel(month)}の精算`;
-  if (s.direction === 'none') return `${head}：0円（貸し借りなし）`;
-  const [from, to] = s.direction === 'me_to_wife' ? ['私', '妻'] : ['妻', '私'];
-  return `${head}：${from} → ${to} ${yen(s.amount)}`;
-}
+const rowsOf = (r) => r.items.map((i) => ({ amount: i.a, share: i.s, payer: r.payer }));
+const monthRows = (m) => receipts.filter((r) => r.month === m).flatMap(rowsOf);
+const fxRows = (m) => fxOf(m).filter((f) => f.amount).map((f) => ({ amount: f.amount, share: f.share, payer: f.payer }));
 
-// ===== 画面切替 =====
-const TAB_VIEWS = ['home', 'list', 'settings'];
-function show(view) {
-  document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `view-${view}`; });
-  // 作業中の画面（確認・仕訳／金額だけ入力）ではタブバーを隠して集中できるようにする
-  const useTab = TAB_VIEWS.includes(view);
-  $('#tabbar').hidden = !useTab;
-  document.body.classList.toggle('has-tabbar', useTab);
-  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === view));
-  if (view === 'home') renderHome();
-  if (view === 'review') renderReview();
-  if (view === 'manual') renderManual();
-  if (view === 'list') renderList();
-  if (view === 'close') renderClose();
-  if (view === 'settings') renderSettings();
-  window.scrollTo(0, 0);
+function flowHTML(dir) {
+  if (dir === 'none') return '<span class="flow-none">貸し借りなし</span>';
+  const [f, t] = dir === 'me_to_wife' ? ['me', 'wife'] : ['wife', 'me'];
+  return `<span class="who ${f}">${PERSON[f]}</span><span class="arrow">→</span><span class="who ${t}">${PERSON[t]}</span>`;
 }
-document.addEventListener('click', (ev) => {
-  const nav = ev.target.closest('[data-nav]');
-  if (nav) show(nav.dataset.nav);
-});
-
-// ===== ① ホーム =====
-function shiftMonth(month, delta) {
-  const [y, m] = month.split('-').map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+function shareTotals(rows) {
+  const t = { common: 0, me: 0, wife: 0 };
+  rows.forEach((r) => { t[r.share] += r.amount; });
+  return t;
 }
-function flowHTML(direction) {
-  if (direction === 'none') return '<span class="flow-none">貸し借りなし</span>';
-  const [from, to] = direction === 'me_to_wife' ? ['me', 'wife'] : ['wife', 'me'];
-  return `<span class="who ${from}">${PERSON_LABEL[from]}</span><span class="arrow">→</span><span class="who ${to}">${PERSON_LABEL[to]}</span>`;
-}
-function monthLabel(month) {
-  const [y, m] = month.split('-');
-  return `${y}年${Number(m)}月`;
-}
-function renderHome() {
-  const s = settlement(thisMonth());
-  $('#home-month').textContent = monthLabel(thisMonth());
-  $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
-  $('#home-flow').innerHTML = flowHTML(s.direction);
-  $('#home-fixed-note').hidden = activeFixed().length === 0;
-  $('#home-draft').hidden = !draft;
-}
-
-// ===== 撮る → 縮小 → （ダミー）読み取り → 確認へ =====
-$('#camera').addEventListener('change', async (ev) => {
-  const file = ev.target.files[0];
-  ev.target.value = '';                       // 同じ写真をもう一度選べるようにリセット
-  if (!file) return;
-  try {
-    const image = await shrink(file, 1200);   // 長辺 1200px の JPEG（base64）
-    draft = dummyParse(image);                // ⚠️ 段階3で GAS の parse に置き換える
-    saveDraft();
-    show('review');
-  } catch (err) {
-    alert(`画像の処理に失敗しました：${err.message}`);
-  }
-});
-
-// Canvas で縮小して JPEG の base64 を返す
-function shrink(file, maxSide) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const ratio = Math.min(1, maxSide / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * ratio);
-      canvas.height = Math.round(img.height * ratio);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', 0.8));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めません')); };
-    img.src = url;
+// 帯グラフ。積み上げ順は 共通→私→妻（色の検証はこの順で通している）
+function drawTrack(prefix, totals) {
+  const base = SHARES.reduce((s, k) => s + Math.abs(totals[k]), 0) || 1;
+  SHARES.forEach((k) => {
+    $(`#${prefix}g-${k}`).style.width = `${(Math.abs(totals[k]) / base) * 100}%`;
+    $(`#${prefix}m-${k}`).textContent = yen(totals[k]);
   });
 }
 
-// ダミーの読み取り結果（GAS の parse と同じ形）。合計と品目合計をわざとずらして「調整」行を試せるようにしている
-function dummyParse(image) {
-  return {
-    receipt_id: `r-${today().replace(/-/g, '')}-${String(Date.now()).slice(-3)}`,
-    date: today(),
-    store: 'ライフ 三軒茶屋',
-    payer: settings.owner,
-    total: 2199,
-    image,
-    items: [
-      { item: 'スーパードライ 350ml', amount: 228, share: 'me', rule: true },
-      { item: '本麒麟 350ml', amount: 158, share: 'wife', rule: true },
-      { item: '牛乳 1L', amount: 238, share: 'common' },
-      { item: '食パン 6枚', amount: 168, share: 'common' },
-      { item: '鶏むね肉 500g', amount: 498, share: 'common' },
-      { item: 'トイレットペーパー 12R', amount: 598, share: 'common' },
-      { item: 'ヨーグルト', amount: 198, share: 'common' },
-      { item: '割引', amount: -50, share: 'common' },
-    ],
-  };
+function toast(msg) {
+  const el = $('#toast'); el.textContent = msg; el.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2600);
 }
-function saveDraft() {
-  // 画像は大きいので端末保存から外す（再送時に画像は不要）
-  store.set(LS.draft, draft ? { ...draft, image: null } : null);
+
+// ===== 画面切替 =====
+const TABS = ['home', 'list', 'stats', 'settings'];
+const R = { home: renderHome, review: renderReview, manual: renderManual, list: renderList,
+  detail: renderDetail, close: renderClose, stats: renderStats, settle: renderSettle, settings: renderSettings };
+function go(v) {
+  document.querySelectorAll('.view').forEach((s) => { s.hidden = s.id !== `v-${v}`; });
+  const tab = TABS.includes(v);
+  $('#tabbar').hidden = !tab;
+  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === v));
+  R[v]?.();
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-go]');
+  if (!b) return;
+  if (b.dataset.mode) draft = makeDraft(b.dataset.mode);
+  go(b.dataset.go);
+});
+
+// ===== ① ホーム =====
+function renderHome() {
+  const s = calc(monthRows(THIS_M));
+  $('#home-month').textContent = monthLabel(THIS_M);
+  $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
+  $('#home-flow').innerHTML = flowHTML(s.dir);
+  const un = unpaid();
+  $('#home-unpaid').hidden = un.amount === 0;
+  if (un.amount) {
+    $('#unpaid-amt').textContent = yen(un.amount);
+    $('#unpaid-sub').textContent = `${monthLabel(un.month)}分・${PERSON[un.dir === 'wife_to_me' ? 'wife' : 'me']}が渡す`;
+  }
+}
+function unpaid() {
+  let owed = 0, m = null, dir = 'none';
+  for (const [k, v] of Object.entries(closed)) {
+    const sign = v.dir === 'wife_to_me' ? 1 : -1;
+    owed += sign * v.amount; m = k; dir = v.dir;
+  }
+  settles.forEach((p) => { owed -= (p.dir === 'wife_to_me' ? 1 : -1) * p.amount; });
+  return { amount: Math.abs(owed), month: m, dir: owed >= 0 ? 'wife_to_me' : 'me_to_wife' };
 }
 
 // ===== ② 確認・仕訳 =====
-// 品目合計とレシート合計の差を「調整」行として足したリストを返す
+let draft = null;
+function makeDraft(mode) {
+  if (mode === 'noitems') {
+    return { date: '2026-09-19', store: 'ドトール 三軒茶屋', payer: 'me', total: 880, hasItems: false,
+      photo: fakePhoto('ドトール 三軒茶屋'), items: [{ n: 'ドトール 三軒茶屋', a: 880, s: 'common', c: '外食' }] };
+  }
+  return { date: '2026-09-19', store: 'ライフ 三軒茶屋', payer: 'me', total: 2300, hasItems: true,
+    photo: fakePhoto('ライフ 三軒茶屋'),
+    items: JSON.parse(JSON.stringify(receipts[0].items.filter((i) => !i.adjust))) };
+}
 function draftRows() {
-  const rows = draft.items.map((it) => ({ ...it, amount: Number(it.amount) || 0 }));
-  const sum = rows.reduce((s, r) => s + r.amount, 0);
-  const adjust = (Number(draft.total) || 0) - sum;
-  if (adjust !== 0) rows.push({ item: '調整（税・割引）', amount: adjust, share: 'common', adjust: true });
+  const rows = draft.items.map((i) => ({ ...i, a: Number(i.a) || 0 }));
+  const gap = (Number(draft.total) || 0) - rows.reduce((s, r) => s + r.a, 0);
+  if (gap !== 0) rows.push({ n: '調整（税・割引）', a: gap, s: 'common', c: '食費', adjust: true });
   return rows;
 }
-
 function renderReview() {
-  if (!draft) { show('home'); return; }
-  const thumb = $('#thumb');
-  thumb.hidden = !draft.image;
-  if (draft.image) thumb.src = draft.image;
+  if (!draft) draft = makeDraft('items');
+  $('#noitems-banner').hidden = draft.hasItems;
+  $('#r-photo').src = draft.photo;
   $('#r-date').value = draft.date;
   $('#r-store').value = draft.store;
   $('#r-total').value = draft.total;
-  $('#r-payer').textContent = PERSON_LABEL[draft.payer];
-  renderRows();
+  $('#r-payer').textContent = PERSON[draft.payer];
+  $('#add-row-txt').textContent = draft.hasItems ? '行を追加' : '分ける（行を足す）';
+  drawRows();
 }
-
-function renderRows() {
-  const ul = $('#rows');
+function drawRows() {
   const rows = draftRows();
-  ul.innerHTML = '';
-  rows.forEach((it, idx) => {
+  const ul = $('#r-rows'); ul.innerHTML = '';
+  rows.forEach((it, i) => {
     const li = document.createElement('li');
-    li.className = `row ${it.share}${it.adjust ? ' adjust' : ''}`;
-    li.dataset.idx = idx;
+    li.className = `row ${it.s}${it.adjust ? ' adjust' : ''}`;
+    li.dataset.i = i;
     const ro = it.adjust ? 'readonly' : '';
     li.innerHTML = `
-      <input class="name" type="text" value="${esc(it.item)}" ${ro}>
-      <div class="ctrl">
-        <input class="amt" type="number" inputmode="numeric" value="${it.amount}" ${ro}>
-        <span class="cur">円</span>
-        <button class="share" type="button" ${it.adjust ? 'disabled' : ''}>${it.rule ? '<span class="rule">🔁</span>' : ''}${SHARE_LABEL[it.share]}</button>
+      <div class="r-top">
+        <input class="name" type="text" value="${esc(it.n)}" ${ro}>
+        <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${it.a}" ${ro}><span class="cur">円</span></div>
+      </div>
+      <div class="r-bot">
+        <button class="cat" type="button" ${it.adjust ? 'disabled' : ''}>${it.c}</button>
+        <button class="share" type="button" ${it.adjust ? 'disabled' : ''} aria-label="誰の分か：${SHARE_LABEL[it.s]}。タップで変更">${it.rule ? '<span class="rule">🔁</span>' : ''}${SHARE_LABEL[it.s]}${it.adjust ? '' : SWAP}</button>
         ${it.adjust ? '' : '<button class="del" type="button" aria-label="削除">×</button>'}
       </div>`;
     ul.appendChild(li);
   });
-  renderSumbar(rows);
+  drawTrack('s', shareTotals(rows.map((r) => ({ share: r.s, amount: r.a }))));
 }
-
-// 共通・私・妻の内訳を帯グラフで表示（マイナス金額は幅の計算だけ絶対値にする）
-function renderSumbar(rows) {
-  const total = { common: 0, me: 0, wife: 0 };
-  rows.forEach((r) => { total[r.share] += r.amount; });
-  const base = SHARES.reduce((s, k) => s + Math.abs(total[k]), 0) || 1;
-  SHARES.forEach((k) => {
-    $(`#seg-${k}`).style.width = `${(Math.abs(total[k]) / base) * 100}%`;
-    $(`#sum-${k}`).textContent = yen(total[k]);
-  });
-}
-
-// 行の操作（区分タップ・削除・編集）
-$('#rows').addEventListener('click', (ev) => {
-  const li = ev.target.closest('.row');
-  if (!li) return;
-  const it = draft.items[li.dataset.idx];
-  if (!it) return;                                   // 調整行は対象外
-  if (ev.target.closest('.share')) {
-    it.share = nextShare(it.share);
-    it.rule = false;                                 // 手で変えたらルール印は消す
-  } else if (ev.target.closest('.del')) {
-    draft.items.splice(li.dataset.idx, 1);
-  } else return;
-  saveDraft();
-  renderRows();
-});
-$('#rows').addEventListener('change', (ev) => {
-  const li = ev.target.closest('.row');
-  const it = li && draft.items[li.dataset.idx];
+$('#r-rows').addEventListener('click', (e) => {
+  const li = e.target.closest('.row'); const it = li && draft.items[li.dataset.i];
   if (!it) return;
-  if (ev.target.classList.contains('name')) it.item = ev.target.value.trim();
-  if (ev.target.classList.contains('amt')) it.amount = Number(ev.target.value) || 0;
-  saveDraft();
-  renderRows();                                      // 調整行を計算し直す
+  if (e.target.closest('.share')) { it.s = next(SHARES, it.s); it.rule = false; }
+  else if (e.target.closest('.cat')) it.c = next(CATS, it.c);
+  else if (e.target.closest('.del')) draft.items.splice(li.dataset.i, 1);
+  else return;
+  drawRows();
 });
-// まとめて区分を変える（自分の分だけのレシートを1タップで終わらせる）
-$('#bulk').addEventListener('click', (ev) => {
-  const btn = ev.target.closest('[data-bulk]');
-  if (!btn || !draft) return;
-  draft.items.forEach((it) => { it.share = btn.dataset.bulk; it.rule = false; });
-  saveDraft();
-  renderRows();
+$('#r-rows').addEventListener('change', (e) => {
+  const li = e.target.closest('.row'); const it = li && draft.items[li.dataset.i];
+  if (!it) return;
+  if (e.target.classList.contains('name')) it.n = e.target.value;
+  if (e.target.classList.contains('amt')) it.a = Number(e.target.value) || 0;
+  drawRows();
 });
-
+$('#bulk').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-bulk]'); if (!b) return;
+  draft.items.forEach((i) => { i.s = b.dataset.bulk; i.rule = false; });
+  drawRows();
+});
 $('#add-row').addEventListener('click', () => {
-  draft.items.push({ item: '', amount: 0, share: 'common' });
-  saveDraft();
-  renderRows();
-  $('#rows .row:last-of-type .name')?.focus();
+  draft.items.push({ n: '', a: 0, s: 'common', c: 'その他' }); drawRows();
 });
+$('#r-total').addEventListener('change', (e) => { draft.total = Number(e.target.value) || 0; drawRows(); });
+$('#r-payer').addEventListener('click', () => { draft.payer = other(draft.payer); $('#r-payer').textContent = PERSON[draft.payer]; });
+$('#r-send').addEventListener('click', async () => {
+  const rows = draftRows().filter((r) => r.a !== 0 || r.n);
+  if (!rows.length) { alert('品目がありません'); return; }
+  if (!API.ready()) { toast('送りました（未接続なので保存はされません）'); go('home'); return; }
 
-// ヘッダの編集
-$('#r-date').addEventListener('change', (ev) => { draft.date = ev.target.value; saveDraft(); });
-$('#r-store').addEventListener('change', (ev) => { draft.store = ev.target.value.trim(); saveDraft(); });
-$('#r-total').addEventListener('change', (ev) => { draft.total = Number(ev.target.value) || 0; saveDraft(); renderRows(); });
-$('#r-payer').addEventListener('click', () => {
-  draft.payer = otherPerson(draft.payer);
-  $('#r-payer').textContent = PERSON_LABEL[draft.payer];
-  saveDraft();
-});
-
-// 送る（段階1は端末内に保存するだけ。段階2で GAS の save を呼ぶ）
-$('#send').addEventListener('click', () => {
-  if (!draft.date) { alert('日付を入れてください'); return; }
-  const rows = draftRows().filter((r) => r.amount !== 0 || r.item);
-  if (rows.length === 0) { alert('品目がありません'); return; }
-  const now = new Date();
-  rows.forEach((r, i) => entries.push({
-    id: `${draft.receipt_id}-${pad2(i + 1)}`,
-    receipt_id: draft.receipt_id,
-    date: draft.date,
-    store: draft.store,
-    item: r.item,
-    amount: r.amount,
-    payer: draft.payer,
-    share: r.share,
-    entered_by: settings.owner,
-    created_at: fmtDateTime(now),
-    month: draft.date.slice(0, 7),
-  }));
-  store.set(LS.entries, entries);
-  const month = draft.date.slice(0, 7);
-  viewMonth = month;
-  draft = null;
-  saveDraft();
-  show('home');
-  toast(settleText(month));
+  const btn = $('#r-send');
+  btn.disabled = true; btn.textContent = '送信中…';
+  try {
+    const res = await API.call('save', toServer(draft, rows, store.get(LS.owner, 'me')));
+    month = draft.date.slice(0, 7);
+    toast(`保存しました（${res.saved}品目）`);
+    go('home');
+  } catch (e) {
+    alert(`送れませんでした。\n${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="ico"><use href="#i-send"/></svg>送る';
+  }
 });
 
 // ===== ②' 金額だけ入力 =====
-const manual = { share: 'common', payer: 'me' };
 function renderManual() {
-  manual.share = 'common';
-  manual.payer = settings.owner;
-  $('#m-amount').value = '';
-  $('#m-memo').value = '';
-  $('#m-date').value = today();
-  $('#m-share').textContent = SHARE_LABEL[manual.share];
-  $('#m-payer').textContent = PERSON_LABEL[manual.payer];
+  $('#m-date').value = '2026-09-19';
+  $('#m-cat').innerHTML = CATS.map((c) => `<option>${c}</option>`).join('');
+  drawManualShare();
 }
-$('#m-share').addEventListener('click', () => { manual.share = nextShare(manual.share); $('#m-share').textContent = SHARE_LABEL[manual.share]; });
-$('#m-payer').addEventListener('click', () => { manual.payer = otherPerson(manual.payer); $('#m-payer').textContent = PERSON_LABEL[manual.payer]; });
-$('#m-send').addEventListener('click', () => {
-  const amount = Number($('#m-amount').value);
-  const date = $('#m-date').value;
-  if (!Number.isInteger(amount) || amount === 0) { alert('金額を整数で入れてください'); return; }
-  if (!date) { alert('日付を入れてください'); return; }
-  const rid = `m-${date.replace(/-/g, '')}-${String(Date.now()).slice(-3)}`;
-  entries.push({
-    id: `${rid}-01`, receipt_id: rid, date, store: '手入力',
-    item: $('#m-memo').value.trim() || '（メモなし）', amount,
-    payer: manual.payer, share: manual.share, entered_by: settings.owner,
-    created_at: fmtDateTime(new Date()), month: date.slice(0, 7),
-  });
-  store.set(LS.entries, entries);
-  viewMonth = date.slice(0, 7);
-  show('home');
-  toast(settleText(date.slice(0, 7)));
-});
+let mShare = 'common';
+function drawManualShare() {
+  $('#m-row').className = `row ${mShare}`;
+  $('#m-share').innerHTML = SHARE_LABEL[mShare] + SWAP;
+}
+$('#m-share').addEventListener('click', () => { mShare = next(SHARES, mShare); drawManualShare(); });
+$('#m-payer').addEventListener('click', (e) => { e.target.textContent = e.target.textContent === '私' ? '妻' : '私'; });
 
-// ===== ③ 今月の一覧 =====
-function renderList() {
-  const month = viewMonth || (viewMonth = thisMonth());
+// ===== ③ 明細（レシート単位）=====
+let openId = 'r1';
+async function renderList() {
   $('#list-month').textContent = monthLabel(month);
-  $('#list-settle').textContent = settleText(month);
-  $('#next-month').disabled = month >= thisMonth();      // 未来の月は見ない
-  const ul = $('#list-rows');
-  ul.innerHTML = '';
-  const rows = monthEntries(month).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  if (rows.length === 0) { ul.innerHTML = '<li class="hint">この月の明細はまだありません</li>'; return; }
-  rows.forEach((e) => {
-    const li = document.createElement('li');
-    li.className = `row ${e.share}`;
-    li.dataset.id = e.id;
-    li.innerHTML = `
-      <div><div class="name-static">${esc(e.item)}</div><div class="meta">${e.date.slice(5).replace('-', '/')} ${esc(e.store)}・支払 ${PERSON_LABEL[e.payer]}</div></div>
-      <div class="amt">${yen(e.amount)}</div>
-      <button class="share" type="button">${SHARE_LABEL[e.share]}</button>
-      <button class="del" type="button" aria-label="削除">×</button>`;
-    ul.appendChild(li);
+  $('#next-m').disabled = month >= THIS_M;
+  $('#demo-banner').hidden = API.ready();
+
+  if (API.ready()) {                       // 本物のデータに入れ替える
+    const box = $('#list-cards');
+    box.innerHTML = '<p class="hint">読み込み中…</p>';
+    try {
+      const res = await API.call('summary', { month });
+      const got = res.receipts.map(fromServer);
+      receipts = receipts.filter((r) => r.month !== month).concat(got);
+    } catch (e) {
+      box.innerHTML = `<p class="hint" style="color:var(--danger)">${esc(e.message)}</p>`;
+      return;
+    }
+  }
+
+  drawTrack('l', shareTotals(monthRows(month).map((r) => ({ share: r.share, amount: r.amount }))));
+  const box = $('#list-cards'); box.innerHTML = '';
+  const list = receipts.filter((r) => r.month === month).sort((a, b) => (a.date < b.date ? 1 : -1));
+  if (!list.length) { box.innerHTML = '<p class="hint">この月の明細はまだありません</p>'; return; }
+  list.forEach((r) => {
+    const t = shareTotals(r.items.map((i) => ({ share: i.s, amount: i.a })));
+    const base = SHARES.reduce((s, k) => s + Math.abs(t[k]), 0) || 1;
+    const b = document.createElement('button');
+    b.className = 'rcard'; b.dataset.rid = r.id;
+    b.innerHTML = `
+      ${r.photoData ? `<img class="thumb" src="${r.photoData}" alt="">` : '<div class="nophoto">写真<br>なし</div>'}
+      <div>
+        <div class="top"><span class="store">${esc(r.store)}</span><span class="total">${yen(r.total)}</span></div>
+        <div class="meta">${r.date.slice(5).replace('-', '/')}・${PERSON[r.payer]}が支払い・${r.hasItems ? `${r.items.length}品目` : '明細なし'}</div>
+        <div class="track">${SHARES.map((k) => `<span class="seg ${k}" style="width:${Math.abs(t[k]) / base * 100}%"></span>`).join('')}</div>
+      </div>`;
+    box.appendChild(b);
   });
 }
-$('#list-rows').addEventListener('click', (ev) => {
-  const li = ev.target.closest('.row');
-  const e = li && entries.find((x) => x.id === li.dataset.id);
-  if (!e) return;
-  if (ev.target.closest('.share')) {
-    e.share = nextShare(e.share);
-  } else if (ev.target.closest('.del')) {
-    if (!confirm(`「${e.item}」を削除しますか？`)) return;
-    entries = entries.filter((x) => x.id !== e.id);
-  } else return;
-  store.set(LS.entries, entries);
-  renderList();
+$('#list-cards').addEventListener('click', (e) => {
+  const c = e.target.closest('[data-rid]'); if (!c) return;
+  openId = c.dataset.rid; go('detail');
 });
+$('#prev-m').addEventListener('click', () => { month = PREV_M; renderList(); });
+$('#next-m').addEventListener('click', () => { month = THIS_M; renderList(); });
 
-$('#prev-month').addEventListener('click', () => { viewMonth = shiftMonth(viewMonth, -1); renderList(); });
-$('#next-month').addEventListener('click', () => { viewMonth = shiftMonth(viewMonth, 1); renderList(); });
-$('#go-close').addEventListener('click', () => show('close'));
-
-// ===== ④ 月末締め =====
-function renderClose() {
-  const month = viewMonth || (viewMonth = thisMonth());
-  const ents = monthEntries(month);
-  const fx = activeFixed();
-  const s = calc([...ents, ...fx]);                       // 締めはレシート＋固定費
-  const rec = closes[month];
-
-  $('#close-month').textContent = `${monthLabel(month)}の精算`;
-  $('#close-amount').textContent = s.amount.toLocaleString('ja-JP');
-  $('#close-flow').innerHTML = flowHTML(s.direction);
-
-  // 何を合計したか
-  const sum = (rows) => rows.reduce((t, r) => t + r.amount, 0);
-  $('#close-parts').innerHTML = `
-    <tr><td>レシートの明細</td><td>${ents.length}件</td><td>${yen(sum(ents))}</td></tr>
-    <tr><td>固定費</td><td>${fx.length}件</td><td>${yen(sum(fx))}</td></tr>
-    <tr class="total"><td>合計</td><td></td><td>${yen(sum(ents) + sum(fx))}</td></tr>`;
-
-  // 計算の内訳
-  const d = { me: s.burden.me - s.paid.me, wife: s.burden.wife - s.paid.wife };
-  const cell = (v) => `<td class="${v > 0 ? 'pay' : v < 0 ? 'get' : ''}">${v > 0 ? '+' : ''}${yen(v)}</td>`;
-  $('#close-table').innerHTML = `
-    <thead><tr><th></th><th>私</th><th>妻</th></tr></thead>
-    <tbody>
-      <tr><td>払った額</td><td>${yen(s.paid.me)}</td><td>${yen(s.paid.wife)}</td></tr>
-      <tr><td>負担する額</td><td>${yen(s.burden.me)}</td><td>${yen(s.burden.wife)}</td></tr>
-      <tr class="diff"><td>差額</td>${cell(d.me)}${cell(d.wife)}</tr>
-    </tbody>`;
-  const odd = s.common % 2 === 1;
-  $('#close-note').innerHTML = `共通の合計 ${yen(s.common)} を半分にして 1人 ${yen(s.half)}。`
-    + (odd ? '<br>共通が奇数のため、1円は精算しません（切り捨て）。' : '')
-    + '<br>プラスは渡す側、マイナスは受け取る側です。';
-
-  // 締め済みかどうか
-  $('#close-done').hidden = !rec;
-  if (rec) $('#close-done-txt').textContent = `${rec.closed_at} に締めました`;
-  $('#do-close').innerHTML = rec
-    ? '<svg class="ico"><use href="#i-lock"/></svg>締め直す'
-    : '<svg class="ico"><use href="#i-lock"/></svg>この月を締める';
-}
-
-$('#do-close').addEventListener('click', () => {
-  const month = viewMonth;
-  const s = calc([...monthEntries(month), ...activeFixed()]);
-  const again = Boolean(closes[month]);
-  if (again && !confirm(`${monthLabel(month)} は締め済みです。今の明細で締め直しますか？`)) return;
-  closes[month] = {
-    month,
-    paid_me: s.paid.me, paid_wife: s.paid.wife,
-    burden_me: s.burden.me, burden_wife: s.burden.wife,
-    settle_amount: s.amount, settle_direction: s.direction,
-    closed_at: fmtDateTime(new Date()),
-  };
-  store.set(LS.closes, closes);
-  renderClose();
-  toast(again ? `${monthLabel(month)} を締め直しました` : `${monthLabel(month)} を締めました`);
-});
-
-// ===== ⑤ 設定 =====
-function renderSettings() {
-  document.querySelectorAll('input[name="owner"]').forEach((r) => { r.checked = r.value === settings.owner; });
-  renderFixed();
-}
-
-// 固定費の一覧。行は明細と同じ見た目（品名・金額・支払者・区分）
-function renderFixed() {
-  const ul = $('#fixed-rows');
-  ul.innerHTML = '';
-  if (fixedCosts.length === 0) {
-    ul.innerHTML = '<li class="hint">まだ登録がありません。下の「固定費を追加」から家賃や光熱費を入れてください</li>';
-    return;
+// ===== ④ レシート詳細 =====
+async function renderDetail() {
+  if (API.ready()) {
+    try {
+      const res = await API.call('receipt', { receipt_id: openId });
+      const got = fromServer(res.receipt);
+      receipts = receipts.map((x) => (x.id === openId ? Object.assign(x, got) : x));
+    } catch (e) { /* 取れなければ手元のものを表示する */ }
   }
-  fixedCosts.forEach((f, idx) => {
+  const r = receipts.find((x) => x.id === openId);
+  if (!r) { go('list'); return; }
+  $('#d-title').textContent = r.store;
+  $('#d-photo').innerHTML = r.photoData
+    ? `<img class="photo" src="${r.photoData}" alt="${esc(r.store)}のレシート">`
+    : '<div class="photo-none">写真はありません<br>（手入力、または2か月を過ぎて自動削除されました）</div>';
+  $('#d-head').innerHTML = `
+    <tr><td>日付</td><td>${r.date}</td></tr>
+    <tr><td>お店</td><td>${esc(r.store)}</td></tr>
+    <tr><td>支払った人</td><td>${PERSON[r.payer]}</td></tr>
+    <tr class="total"><td>合計</td><td>${yen(r.total)}</td></tr>`;
+  const ul = $('#d-rows'); ul.innerHTML = '';
+  r.items.forEach((it, i) => {
     const li = document.createElement('li');
-    li.className = `row ${f.share}${f.active ? '' : ' off'}`;
-    li.dataset.idx = idx;
+    li.className = `row ${it.s}`; li.dataset.i = i;
     li.innerHTML = `
-      <input class="name" type="text" value="${esc(f.name)}" placeholder="例：家賃">
-      <div class="ctrl">
-        <input class="amt" type="number" inputmode="numeric" value="${f.amount}">
-        <span class="cur">円</span>
-        <button class="payer" type="button">${PERSON_LABEL[f.payer]}</button>
-        <button class="share" type="button">${SHARE_LABEL[f.share]}</button>
+      <div class="r-top">
+        <span class="static">${esc(it.n)}</span>
+        <div class="r-amt"><span class="fixed">${yen(it.a)}</span></div>
+      </div>
+      <div class="r-bot">
+        <button class="cat" type="button">${it.c}</button>
+        <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[it.s]}。タップで変更">${SHARE_LABEL[it.s]}${SWAP}</button>
         <button class="del" type="button" aria-label="削除">×</button>
       </div>`;
     ul.appendChild(li);
   });
 }
+$('#d-rows').addEventListener('click', (e) => {
+  const li = e.target.closest('.row'); if (!li) return;
+  const r = receipts.find((x) => x.id === openId); const it = r.items[li.dataset.i];
+  if (e.target.closest('.share')) it.s = next(SHARES, it.s);
+  else if (e.target.closest('.cat')) it.c = next(CATS, it.c);
+  else if (e.target.closest('.del')) r.items.splice(li.dataset.i, 1);
+  else return;
+  renderDetail();
+});
 
-$('#fixed-rows').addEventListener('click', (ev) => {
-  const li = ev.target.closest('.row');
-  const f = li && fixedCosts[li.dataset.idx];
+// ===== ⑤ 月末締め =====
+// 月の初日・末日（「9/1〜9/30 の登録分」と出すため）
+function monthRange(m) {
+  const [y, mm] = m.split('-').map(Number);
+  return `${mm}/1〜${mm}/${new Date(y, mm, 0).getDate()}`;
+}
+function renderClose() {
+  const m = month;                      // 締めるのは「見ている月」。ボタンを押した日ではない
+  const fxMonthList = fxOf(m);
+  $('#c-range').textContent = `${monthLabel(m)}に登録された分（${monthRange(m)}）だけが対象です。今日の日付は関係ありません`;
+  const box = $('#fx-list'); box.innerHTML = '';
+  fxMonthList.forEach((f, i) => {
+    const need = f.amount === null;
+    const d = document.createElement('div');
+    d.className = `fx ${f.share}${need ? ' need' : ''}`;
+    d.dataset.i = i;
+    d.innerHTML = `
+      <div class="r-top">
+        <span class="static">${esc(f.name)}</span>
+        <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${f.amount ?? ''}" placeholder="${LAST[f.id] ?? 0}"><span class="cur">円</span></div>
+      </div>
+      ${need ? `<p class="need-txt" style="margin:0 0 8px">未入力です（先月は ${yen(LAST[f.id] ?? 0)}）</p>` : ''}
+      <div class="r-bot">
+        <div class="pick payer-col">
+          <span class="pick-label">誰が払った？</span>
+          <button class="payer" type="button" aria-label="誰が払ったか：${PERSON[f.payer]}。タップで変更">${PERSON[f.payer]}${SWAP}</button>
+        </div>
+        <div class="pick share-col">
+          <span class="pick-label">誰の分？</span>
+          <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[f.share]}。タップで変更">${SHARE_LABEL[f.share]}${SWAP}</button>
+        </div>
+      </div>`;
+    box.appendChild(d);
+  });
+
+  const ents = monthRows(m), fx = fxRows(m);
+  const s = calc([...ents, ...fx]);
+  const left = fxMonthList.filter((f) => f.amount === null).length;
+
+  $('#c-month').textContent = `${monthLabel(m)}の精算`;
+  $('#c-amount').textContent = s.amount.toLocaleString('ja-JP');
+  $('#c-flow').innerHTML = flowHTML(s.dir);
+
+  const sum = (rows) => rows.reduce((t, r) => t + r.amount, 0);
+  $('#c-parts').innerHTML = `
+    <tr><td>レシートの明細</td><td>${receipts.filter((r) => r.month === m).length}枚</td><td>${yen(sum(ents))}</td></tr>
+    <tr><td>固定費</td><td>${fx.length}件</td><td>${yen(sum(fx))}</td></tr>
+    <tr class="total"><td>合計</td><td></td><td>${yen(sum(ents) + sum(fx))}</td></tr>`;
+
+  const d = { me: s.burden.me - s.paid.me, wife: s.burden.wife - s.paid.wife };
+  const cell = (v) => `<td class="${v > 0 ? 'pay' : v < 0 ? 'get' : ''}">${v > 0 ? '+' : ''}${yen(v)}</td>`;
+  $('#c-table').innerHTML = `
+    <thead><tr><th></th><th>私</th><th>妻</th></tr></thead>
+    <tbody>
+      <tr><td>払った額</td><td>${yen(s.paid.me)}</td><td>${yen(s.paid.wife)}</td></tr>
+      <tr><td>負担する額</td><td>${yen(s.burden.me)}</td><td>${yen(s.burden.wife)}</td></tr>
+      <tr class="total"><td>差額</td>${cell(d.me)}${cell(d.wife)}</tr>
+    </tbody>`;
+  $('#c-note').innerHTML = `共通の合計 ${yen(s.common)} を半分にして 1人 ${yen(s.half)}。`
+    + (s.common % 2 ? '<br>共通が奇数のため 1円は精算しません（切り捨て）。' : '')
+    + '<br>プラスは渡す側、マイナスは受け取る側です。';
+
+  $('#c-do').disabled = left > 0;
+  $('#c-do').innerHTML = left > 0
+    ? `<svg class="ico"><use href="#i-lock"/></svg>あと ${left} 件の固定費を入れてください`
+    : '<svg class="ico"><use href="#i-lock"/></svg>この月を締める';
+}
+$('#fx-list').addEventListener('change', (e) => {
+  const d = e.target.closest('.fx'); if (!d || !e.target.classList.contains('amt')) return;
+  const v = e.target.value.trim();
+  fxOf(month)[d.dataset.i].amount = v === '' ? null : Number(v) || 0;
+  renderClose();
+});
+// 固定費も「誰の分？」「誰が払った？」をここで変えられる
+$('#fx-list').addEventListener('click', (e) => {
+  const d = e.target.closest('.fx'); const f = d && fxOf(month)[d.dataset.i];
   if (!f) return;
-  if (ev.target.closest('.share')) f.share = nextShare(f.share);
-  else if (ev.target.closest('.payer')) f.payer = otherPerson(f.payer);
-  else if (ev.target.closest('.del')) {
-    if (!confirm(`「${f.name || '名前なし'}」を削除しますか？`)) return;
-    fixedCosts.splice(li.dataset.idx, 1);
-  } else return;
-  store.set(LS.fixed, fixedCosts);
-  renderFixed();
+  if (e.target.closest('.share')) f.share = next(SHARES, f.share);
+  else if (e.target.closest('.payer')) f.payer = other(f.payer);
+  else return;
+  renderClose();
 });
-$('#fixed-rows').addEventListener('change', (ev) => {
-  const li = ev.target.closest('.row');
-  const f = li && fixedCosts[li.dataset.idx];
-  if (!f) return;
-  if (ev.target.classList.contains('name')) f.name = ev.target.value.trim();
-  if (ev.target.classList.contains('amt')) f.amount = Number(ev.target.value) || 0;
-  store.set(LS.fixed, fixedCosts);
+$('#fx-add').addEventListener('click', () => {
+  fxOf(month).push({ id: 'tmp' + Date.now(), name: `${monthLabel(month)}だけの項目`, kind: 'variable', payer: 'me', share: 'common', amount: null });
+  renderClose();
 });
-$('#add-fixed').addEventListener('click', () => {
-  fixedCosts.push({ name: '', amount: 0, payer: settings.owner, share: 'common', active: true });
-  store.set(LS.fixed, fixedCosts);
-  renderFixed();
-  $('#fixed-rows .row:last-of-type .name')?.focus();
+$('#c-do').addEventListener('click', () => {
+  const m = month;
+  const s = calc([...monthRows(m), ...fxRows(m)]);
+  closed[m] = { amount: s.amount, dir: s.dir };
+  settleMonth = m;
+  toast(`${monthLabel(m)}を締めました`);
+  go('settle');
 });
-document.querySelectorAll('input[name="owner"]').forEach((r) => r.addEventListener('change', (ev) => {
-  settings.owner = ev.target.value;
-  store.set(LS.settings, settings);
-  toast(`このスマホは「${PERSON_LABEL[settings.owner]}」に設定しました`);
+
+// ===== ⑥ 分析 =====
+function renderStats() {
+  $('#stats-month').textContent = monthLabel(THIS_M);
+  // 費目別は1系列なので単色。値は棒の先に直接置く（薄い色でも読めるように）
+  const by = {};
+  receipts.filter((r) => r.month === THIS_M).forEach((r) => r.items.forEach((i) => { by[i.c] = (by[i.c] || 0) + i.a; }));
+  const rows = Object.entries(by).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(...rows.map((r) => r[1]), 1);
+  $('#cat-chart').innerHTML = rows.map(([c, v]) => `
+    <div class="bar-row" title="${c} ${yen(v)}">
+      <span class="cat-name">${c}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${Math.max(v / max * 100, 1)}%"></span></span>
+      <span class="val">${yen(v)}</span>
+    </div>`).join('');
+
+  drawTrack('t', shareTotals(monthRows(THIS_M).map((r) => ({ share: r.share, amount: r.amount }))));
+
+  const now = monthRows(THIS_M).reduce((s, r) => s + r.amount, 0);
+  const prev = monthRows(PREV_M).reduce((s, r) => s + r.amount, 0);
+  const diff = now - prev;
+  $('#compare').innerHTML = `
+    <div class="compare"><span class="k">今月（${monthLabel(THIS_M)}）</span><span class="v">${yen(now)}</span></div>
+    <div class="compare"><span class="k">先月（${monthLabel(PREV_M)}）</span><span class="v">${yen(prev)}</span></div>
+    <div class="compare"><span class="k">差</span><span class="delta ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${yen(diff)}</span></div>`;
+}
+
+// ===== ⑦ 精算の記録 =====
+function renderSettle() {
+  const un = unpaid();
+  $('#s-amount').textContent = un.amount.toLocaleString('ja-JP');
+  $('#s-flow').innerHTML = un.amount ? flowHTML(un.dir) : '<span class="flow-none">すべて精算済みです</span>';
+  $('#s-month').textContent = `${monthLabel(un.month || settleMonth)}分`;
+  $('#s-date').value = '2026-10-03';
+  $('#s-amt').value = un.amount || '';
+  $('#s-dir').textContent = un.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻';
+  $('#s-hist').innerHTML = settles.length ? settles.map((p) => `
+    <div class="hist" data-pid="${p.id}">
+      <div><div class="k">${monthLabel(p.month)}分　${p.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻'}</div>
+      <div class="sub">${p.date} に${p.method}${p.memo ? `・${esc(p.memo)}` : ''}</div></div>
+      <div class="v">${yen(p.amount)}</div>
+      <button class="del" aria-label="削除">×</button>
+    </div>`).join('') : '<p class="hint">まだ記録がありません</p>';
+}
+$('#s-dir').addEventListener('click', (e) => { e.target.textContent = e.target.textContent === '妻 → 私' ? '私 → 妻' : '妻 → 私'; });
+$('#s-save').addEventListener('click', () => {
+  const amt = Number($('#s-amt').value);
+  if (!amt) { alert('金額を入れてください'); return; }
+  settles.unshift({ id: 'p' + Date.now(), date: $('#s-date').value, month: unpaid().month || settleMonth,
+    method: $('#s-method').value, memo: $('#s-memo').value, amount: amt,
+    dir: $('#s-dir').textContent === '妻 → 私' ? 'wife_to_me' : 'me_to_wife' });
+  $('#s-memo').value = '';
+  renderSettle(); toast('記録しました');
+});
+$('#s-hist').addEventListener('click', (e) => {
+  const h = e.target.closest('[data-pid]');
+  if (!h || !e.target.closest('.del')) return;
+  settles = settles.filter((p) => p.id !== h.dataset.pid);
+  renderSettle();
+});
+
+// ===== ⑧ 設定 =====
+function renderSettings() {
+  $('#cfg-url').value = API.url;
+  $('#cfg-secret').value = API.secret;
+  $('#cfg-state').innerHTML = API.ready()
+    ? '<b style="color:var(--ok)">設定済みです</b>'
+    : '未設定です。いまはデモのデータが出ています';
+  document.querySelectorAll('input[name="owner"]').forEach((r) => { r.checked = r.value === store.get(LS.owner, 'me'); });
+  $('#tpl-list').innerHTML = templates.map((t, i) => `
+    <div class="fx ${t.share}" data-i="${i}">
+      <div class="r-top">
+        <span class="static">${esc(t.name)}</span>
+        <div class="r-amt">${t.kind === 'fixed'
+          ? `<span class="fixed">${yen(t.def)}</span>`
+          : '<span class="cur">毎月入力</span>'}</div>
+      </div>
+      <div class="r-bot">
+        <div class="pick kind-col">
+          <span class="pick-label">種別</span>
+          <button class="kind" type="button">${t.kind === 'fixed' ? '定額' : '毎月'}${SWAP}</button>
+        </div>
+        <div class="pick payer-col">
+          <span class="pick-label">誰が払う？</span>
+          <button class="payer" type="button" aria-label="誰が払うか：${PERSON[t.payer]}。タップで変更">${PERSON[t.payer]}${SWAP}</button>
+        </div>
+        <div class="pick share-col">
+          <span class="pick-label">誰の分？</span>
+          <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[t.share]}。タップで変更">${SHARE_LABEL[t.share]}${SWAP}</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+$('#tpl-list').addEventListener('click', (e) => {
+  const d = e.target.closest('.fx'); const t = d && templates[d.dataset.i];
+  if (!t) return;
+  if (e.target.closest('.share')) t.share = next(SHARES, t.share);
+  else if (e.target.closest('.payer')) t.payer = other(t.payer);
+  else if (e.target.closest('.kind')) t.kind = t.kind === 'fixed' ? 'variable' : 'fixed';
+  else return;
+  // テンプレートを変えたら、まだ締めていない月の分にも反映する
+  Object.keys(fxByMonth).forEach((mm) => {
+    if (closed[mm]) return;                      // 締め済みの月は触らない
+    fxByMonth[mm] = templates.map((x) => {
+      const cur = fxByMonth[mm].find((y) => y.id === x.id);
+      return { ...x, amount: x.kind === 'fixed' ? x.def : (cur ? cur.amount : null) };
+    });
+  });
+  renderSettings();
+});
+$('#tpl-add').addEventListener('click', () => toast('固定費の保存は段階5で作ります'));
+
+document.querySelectorAll('input[name="owner"]').forEach((r) => r.addEventListener('change', (e) => {
+  store.set(LS.owner, e.target.value);
+  toast(`このスマホは「${PERSON[e.target.value]}」に設定しました`);
 }));
-$('#clear-all').addEventListener('click', () => {
-  if (!confirm('端末内の明細・固定費・締めの記録を全部消します。よろしいですか？')) return;
-  entries = []; draft = null; fixedCosts = []; closes = {};
-  store.set(LS.entries, entries); store.set(LS.fixed, fixedCosts); store.set(LS.closes, closes); saveDraft();
-  show('home');
-  toast('消しました');
+
+$('#cfg-test').addEventListener('click', async () => {
+  store.set(LS.url, $('#cfg-url').value.trim());
+  store.set(LS.secret, $('#cfg-secret').value.trim());
+  const st = $('#cfg-state');
+  st.textContent = '確かめています…';
+  try {
+    const res = await API.call('ping');
+    st.innerHTML = `<b style="color:var(--ok)">つながりました</b>（シート ${res.sheets.length} 枚を確認）`;
+    toast('つながりました');
+  } catch (e) {
+    st.innerHTML = `<b style="color:var(--danger)">${esc(e.message)}</b>`;
+  }
 });
 
-// ===== 起動 =====
-show('home');
+go('home');
