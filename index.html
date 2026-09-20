@@ -24,6 +24,7 @@
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.5 12 20 4.6l-3.1 15.2-4.6-4.2z"/><path d="M12.3 15.6 9 19v-4.4L20 4.6"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10.2" width="16" height="9.8" rx="2.3"/><path d="M8.2 10.2V7.6a3.8 3.8 0 0 1 7.6 0v2.6"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.35-5.65"/><path d="M20 4v4.6h-4.6"/></symbol>
   <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4.5 8.5h14l-4-4M19.5 15.5h-14l4 4"/></symbol>
 </svg>
 
@@ -37,13 +38,17 @@
     <p class="hero-label">今月の精算（レシート分）</p>
     <p class="hero-amount"><span id="home-amount">0</span><span class="unit">円</span></p>
     <div class="hero-flow" id="home-flow"></div>
+    <div class="hero-mini">
+      <div><span class="k">今月の支出</span><b id="home-spend">0円</b></div>
+      <div><span class="k">レシート</span><b id="home-count">0枚</b></div>
+    </div>
+    <p class="hero-note">固定費は月末の「締める」で加算されます</p>
   </div>
-  <p class="hint center">固定費は月末の「締める」で加算されます</p>
 
   <button class="notice" id="home-unpaid" data-go="settle" hidden>
     <span class="notice-dot"></span>
     <span class="grow">未精算 <b id="unpaid-amt"></b><small id="unpaid-sub"></small></span>
-    <svg class="ico"><use href="#i-back"/></svg>
+    <svg class="ico flip"><use href="#i-back"/></svg>
   </button>
 
   <label class="action primary">
@@ -51,13 +56,9 @@
     <span class="action-txt">レシートを撮る<small>撮るとAIが店名と金額を読み取ります</small></span>
     <input type="file" id="camera" accept="image/*" capture="environment" hidden>
   </label>
-  <button class="action" data-go="review" data-mode="items">
-    <svg class="ico"><use href="#i-list"/></svg>
-    <span class="action-txt">見本の明細で試す<small>動きを確かめるための練習用</small></span>
-  </button>
   <button class="action" data-go="manual">
     <svg class="ico"><use href="#i-pen"/></svg>
-    <span class="action-txt">金額だけ入力<small>立て替え・現金用</small></span>
+    <span class="action-txt">金額だけ入力<small>レシートがない立て替え・現金用</small></span>
   </button>
 </section>
 
@@ -66,20 +67,18 @@
   <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>確認・仕訳</h2></header>
   <p class="purpose"><b>AI の読み取りを確かめて直す</b>場所です。品目ごとに 共通 → 私 → 妻 をタップで選べます。</p>
 
-  <div class="notice" id="noitems-banner" hidden>
-    <span class="notice-dot"></span>
-    <span class="grow" id="noitems-txt"></span>
-  </div>
-
-  <img class="photo" id="r-photo" alt="レシートの写真">
+  <button class="shot" id="r-shot" type="button">
+    <img id="r-photo" alt="レシートの写真">
+    <span class="shot-txt" id="noitems-txt"></span>
+  </button>
 
   <div class="card">
     <div class="field-grid">
-      <label class="field"><span>日付</span><input type="date" id="r-date"></label>
-      <label class="field"><span>店名</span><input type="text" id="r-store"></label>
-      <label class="field"><span>合計</span><input type="number" id="r-total" inputmode="numeric" placeholder="0"></label>
+      <label class="field"><span>合計</span><input class="big" type="number" id="r-total" inputmode="numeric" placeholder="0"></label>
       <label class="field"><span>誰が払った？</span><button class="pill" id="r-payer" type="button">私</button></label>
     </div>
+    <label class="field" style="margin:0"><span>店名</span><input type="text" id="r-store"></label>
+    <label class="field" style="margin:12px 0 0"><span>日付</span><input type="date" id="r-date"></label>
   </div>
 
   <div class="card">
@@ -98,9 +97,7 @@
     <button type="button" data-bulk="wife">全部 妻</button>
   </div>
 
-    <p class="sec-label">誰の分？</p>
-  <p class="hint" style="margin-top:0">色の大きなボタンをタップすると 共通 → 私 → 妻 と変わります。左の小さなバッジは費目です</p>
-  <ul id="r-rows" class="rows"></ul>
+  <ul id="r-rows" class="rows compact"></ul>
   <button class="ghost" id="add-row"><svg class="ico"><use href="#i-plus"/></svg><span id="add-row-txt">行を追加</span></button>
 
   <div class="actionbar"><button class="submit" id="r-send"><svg class="ico"><use href="#i-send"/></svg>送る</button></div>
@@ -135,9 +132,10 @@
     <span class="grow">デモのデータです<small>設定で GAS の URL と合言葉を入れると本物になります</small></span>
   </div>
   <div class="monthnav">
-    <button type="button" id="prev-m"><svg class="ico"><use href="#i-back"/></svg></button>
-    <span id="list-month"></span>
-    <button type="button" id="next-m"><svg class="ico flip"><use href="#i-back"/></svg></button>
+    <button type="button" id="prev-m" aria-label="前の月"><svg class="ico"><use href="#i-back"/></svg></button>
+    <span class="mcenter"><span id="list-month"></span><small id="list-sum"></small></span>
+    <button type="button" id="next-m" aria-label="次の月"><svg class="ico flip"><use href="#i-back"/></svg></button>
+    <button type="button" id="refresh-m" aria-label="最新を取りに行く"><svg class="ico"><use href="#i-sync"/></svg></button>
   </div>
   <p class="sync" id="list-sync" hidden>最新を確認しています…</p>
   <div class="card">
@@ -148,7 +146,6 @@
       <li><i class="dot wife"></i>妻 <b id="lm-wife">0円</b></li>
     </ul>
   </div>
-  <p class="hint">レシートをタップすると写真と品目が開きます</p>
   <div id="list-cards"></div>
   <button class="action" data-go="close">
     <svg class="ico"><use href="#i-lock"/></svg>
@@ -164,9 +161,8 @@
   <div class="card">
     <table class="calc"><tbody id="d-head"></tbody></table>
   </div>
-  <p class="sec-label">誰の分？</p>
-  <p class="hint" style="margin-top:0">大きなボタンで支払対象、小さなバッジで費目を直せます</p>
-  <ul id="d-rows" class="rows"></ul>
+  <p class="sec-label">品目と誰の分か</p>
+  <ul id="d-rows" class="rows compact readonly"></ul>
   <button class="danger" disabled title="段階4で作ります">このレシートを削除（段階4で作ります）</button>
 </section>
 
@@ -207,12 +203,14 @@
   <header class="apphead"><h1 class="logo">分析</h1><span class="month" id="stats-month"></span></header>
   <p class="purpose">何にいくら使ったかを見る場所です。先月とも比べられます。</p>
 
-  <div class="card">
+  <p class="hint center" id="stats-empty" hidden>この月のレシートはまだありません</p>
+
+  <div class="card" id="stats-cats">
     <p class="field-title">費目別の支出（今月）</p>
-    <div class="chart" id="cat-chart"></div>
+    <div class="bars" id="cat-chart"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="stats-share">
     <p class="field-title">誰のものか</p>
     <div class="track"><span class="seg common" id="tg-common"></span><span class="seg me" id="tg-me"></span><span class="seg wife" id="tg-wife"></span></div>
     <ul class="legend">
@@ -224,7 +222,7 @@
 
   <div class="card">
     <p class="field-title">先月との比較</p>
-    <div id="compare"></div>
+    <div class="cmp" id="compare"></div>
   </div>
 </section>
 

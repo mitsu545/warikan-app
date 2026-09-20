@@ -17,6 +17,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const next = (arr, v) => arr[(arr.indexOf(v) + 1) % arr.length];
 const other = (p) => (p === 'me' ? 'wife' : 'me');
 const monthLabel = (m) => { const [y, mm] = m.split('-'); return `${y}年${Number(mm)}月`; };
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+// 「9/19（金）」。曜日があると「あの金曜の買い物」と記憶がつながる
+const dayLabel = (d) => {
+  const [y, m, dd] = d.split('-').map(Number);
+  const w = new Date(y, m - 1, dd).getDay();
+  return `${m}/${dd}（${WD[w]}）`;
+};
 
 // ダミーのレシート写真（本物の画像は使わず、それらしい絵を canvas で作る）
 function fakePhoto(seed, w = 520, h = 340) {
@@ -186,6 +193,9 @@ function renderHome() {
   $('#home-month').textContent = monthLabel(THIS_M);
   $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
   $('#home-flow').innerHTML = flowHTML(s.dir);
+  const mine = receipts.filter((r) => r.month === THIS_M);
+  $('#home-spend').textContent = yen(monthRows(THIS_M).reduce((t, r) => t + r.amount, 0));
+  $('#home-count').textContent = `${mine.length}枚`;
   const un = unpaid();
   $('#home-unpaid').hidden = !(un.amount && un.month);   // 月が分からないものは出さない
   if (un.amount && un.month) {
@@ -308,7 +318,7 @@ function setVal(sel, v) { const el = $(sel); if (el !== document.activeElement) 
 function reviewBanner() {
   switch (draft.ocr) {
     case 'reading': return 'レシートを読んでいます…<small>数秒かかります。そのまま待つか、自分で入力しても大丈夫です</small>';
-    case 'done':    return '読み取りました<small><b>金額と店名が合っているか必ず確かめてください。</b>間違っていればその場で直せます</small>';
+    case 'done':    return '読み取りました<small><b>金額と店名を必ず確かめてください。</b>押すと写真を拡大します</small>';
     case 'empty':   return '読み取れませんでした<small>写真は保存されます。合計と店名を入れてください</small>';
     case 'fail':    return `読み取りに失敗しました<small>${esc(draft.ocrError || '')}。手で入力すれば登録できます</small>`;
     case 'off':     return '設定がまだです<small>設定で GAS の URL と合言葉を入れると読み取りが使えます</small>';
@@ -317,9 +327,11 @@ function reviewBanner() {
 }
 function renderReview() {
   if (!draft) draft = makeDraft('items');
-  $('#noitems-banner').hidden = !reviewBanner();
+  // 案内は写真の見出しの中に出す。写真がなくても案内だけは見せる
   $('#noitems-txt').innerHTML = reviewBanner() || '';
-  $('#r-photo').src = draft.photo;
+  $('#r-photo').src = draft.photo || '';
+  $('#r-photo').hidden = !draft.photo;
+  $('#r-shot').hidden = !(draft.photo || reviewBanner());
   setVal('#r-date', draft.date);
   setVal('#r-store', draft.store);
   setVal('#r-total', draft.total || '');
@@ -336,15 +348,15 @@ function drawRows() {
     li.dataset.i = i;
     const ro = it.adjust ? 'readonly' : '';
     li.innerHTML = `
-      <div class="r-top">
+      <div class="r-main">
         <input class="name" type="text" value="${esc(it.n)}" ${ro}>
-        <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${it.a}" ${ro}><span class="cur">円</span></div>
+        <div class="r-sub">
+          <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${it.a}" ${ro}><span class="cur">円</span></div>
+          <button class="cat" type="button" ${it.adjust ? 'disabled' : ''}>${it.c}</button>
+        </div>
       </div>
-      <div class="r-bot">
-        <button class="cat" type="button" ${it.adjust ? 'disabled' : ''}>${it.c}</button>
-        <button class="share" type="button" ${it.adjust ? 'disabled' : ''} aria-label="誰の分か：${SHARE_LABEL[it.s]}。タップで変更">${it.rule ? '<span class="rule">🔁</span>' : ''}${SHARE_LABEL[it.s]}${it.adjust ? '' : SWAP}</button>
-        ${it.adjust ? '' : '<button class="del" type="button" aria-label="削除">×</button>'}
-      </div>`;
+      <button class="share" type="button" ${it.adjust ? 'disabled' : ''} aria-label="誰の分か：${SHARE_LABEL[it.s]}。タップで変更">${it.rule ? '<span class="rule">🔁</span>' : ''}${SHARE_LABEL[it.s]}${it.adjust ? '' : SWAP}</button>
+      ${it.adjust ? '<span></span>' : '<button class="del" type="button" aria-label="この品目を消す">×</button>'}`;
     ul.appendChild(li);
   });
   drawTrack('s', shareTotals(rows.map((r) => ({ share: r.s, amount: r.a }))));
@@ -387,6 +399,15 @@ $('#add-row').addEventListener('click', () => {
 $('#r-total').addEventListener('input', (e) => { draft.edited.total = true; draft.total = Number(e.target.value) || 0; syncAdjust(); });
 $('#r-store').addEventListener('input', (e) => { draft.edited.store = true; draft.store = e.target.value.trim(); });
 $('#r-date').addEventListener('input',  (e) => { draft.edited.date = true; if (e.target.value) draft.date = e.target.value; });
+// 写真をタップで拡大（小さくした代わりに、いつでも大きく見られるように）
+$('#r-shot').addEventListener('click', () => {
+  if (!draft || !draft.photo) return;
+  const box = document.createElement('div');
+  box.className = 'lightbox';
+  box.innerHTML = `<img src="${draft.photo}" alt="レシートの写真">`;
+  box.addEventListener('click', () => box.remove());
+  document.body.appendChild(box);
+});
 $('#r-payer').addEventListener('click', () => { draft.payer = other(draft.payer); $('#r-payer').textContent = PERSON[draft.payer]; });
 // 送る直前に画面の値をそのまま読み直す（イベントの取りこぼしに対する最後の砦）
 function syncDraft() {
@@ -510,8 +531,19 @@ function drawList(m = month) {
   drawTrack('l', shareTotals(monthRows(m).map((r) => ({ share: r.share, amount: r.amount }))));
   const box = $('#list-cards'); box.innerHTML = '';
   const list = receipts.filter((r) => r.month === m).sort((a, b) => (a.date < b.date ? 1 : -1));
+  $('#list-sum').textContent = list.length
+    ? `${list.length}枚・${yen(list.reduce((t, r) => t + r.total, 0))}`
+    : '';
   if (!list.length) { box.innerHTML = '<p class="hint">この月の明細はまだありません</p>'; return; }
+  let lastDay = '';
   list.forEach((r) => {
+    if (r.date !== lastDay) {                      // 日付ごとにまとめると探しやすい
+      lastDay = r.date;
+      const sep = document.createElement('div');
+      sep.className = 'daysep';
+      sep.innerHTML = `<span>${dayLabel(r.date)}</span><i></i>`;
+      box.appendChild(sep);
+    }
     const t = shareTotals(r.items.map((i) => ({ share: i.s, amount: i.a })));
     const base = SHARES.reduce((s, k) => s + Math.abs(t[k]), 0) || 1;
     const b = document.createElement('button');
@@ -522,7 +554,7 @@ function drawList(m = month) {
         : '<div class="nophoto">写真<br>なし</div>'}
       <div>
         <div class="top"><span class="store">${esc(r.store)}</span><span class="total">${yen(r.total)}</span></div>
-        <div class="meta">${r.date.slice(5).replace('-', '/')}・${PERSON[r.payer]}が支払い・${r.hasItems ? `${r.items.length}品目` : '明細なし'}</div>
+        <div class="meta"><span class="chip ${r.payer}">${PERSON[r.payer]}</span>${r.hasItems ? `${r.items.length}品目` : '明細なし'}</div>
         <div class="track">${SHARES.map((k) => `<span class="seg ${k}" style="width:${Math.abs(t[k]) / base * 100}%"></span>`).join('')}</div>
       </div>`;
     box.appendChild(b);
@@ -531,6 +563,10 @@ function drawList(m = month) {
 $('#list-cards').addEventListener('click', (e) => {
   const c = e.target.closest('[data-rid]'); if (!c) return;
   openId = c.dataset.rid; go('detail');
+});
+$('#refresh-m').addEventListener('click', () => {
+  if (!API.ready()) { toast('設定で GAS の URL と合言葉を入れてください'); return; }
+  invalidate(month); renderList();
 });
 $('#prev-m').addEventListener('click', () => { month = PREV_M; renderList(); });
 $('#next-m').addEventListener('click', () => { month = THIS_M; renderList(); });
@@ -570,28 +606,14 @@ async function renderDetail() {
     const li = document.createElement('li');
     li.className = `row ${it.s}`; li.dataset.i = i;
     li.innerHTML = `
-      <div class="r-top">
+      <div class="r-main">
         <span class="static">${esc(it.n)}</span>
-        <div class="r-amt"><span class="fixed">${yen(it.a)}</span></div>
+        <div class="r-sub"><span class="fixed">${yen(it.a)}</span><span class="catq">${esc(it.c)}</span></div>
       </div>
-      <div class="r-bot">
-        <button class="cat" type="button">${it.c}</button>
-        <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[it.s]}。タップで変更">${SHARE_LABEL[it.s]}${SWAP}</button>
-        <button class="del" type="button" aria-label="削除">×</button>
-      </div>`;
+      <span class="share plain">${SHARE_LABEL[it.s]}</span>`;
     ul.appendChild(li);
   });
 }
-$('#d-rows').addEventListener('click', (e) => {
-  const li = e.target.closest('.row'); if (!li) return;
-  const r = receipts.find((x) => x.id === openId); const it = r.items[li.dataset.i];
-  if (e.target.closest('.share')) it.s = next(SHARES, it.s);
-  else if (e.target.closest('.cat')) it.c = next(CATS, it.c);
-  else if (e.target.closest('.del')) r.items.splice(li.dataset.i, 1);
-  else return;
-  renderDetail();
-});
-
 // ===== ⑤ 月末締め =====
 // 月の初日・末日（「9/1〜9/30 の登録分」と出すため）
 function monthRange(m) {
@@ -695,27 +717,51 @@ async function renderStats() {
 }
 function drawStats() {
   $('#stats-month').textContent = monthLabel(THIS_M);
-  // 費目別は1系列なので単色。値は棒の先に直接置く（薄い色でも読めるように）
-  const by = {};
-  receipts.filter((r) => r.month === THIS_M).forEach((r) => r.items.forEach((i) => { by[i.c] = (by[i.c] || 0) + i.a; }));
-  const rows = Object.entries(by).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(...rows.map((r) => r[1]), 1);
-  $('#cat-chart').innerHTML = rows.map(([c, v]) => `
-    <div class="bar-row" title="${c} ${yen(v)}">
-      <span class="cat-name">${c}</span>
-      <span class="bar-track"><span class="bar-fill" style="width:${Math.max(v / max * 100, 1)}%"></span></span>
-      <span class="val">${yen(v)}</span>
-    </div>`).join('');
+  const rowsNow = monthRows(THIS_M);
+  const now = rowsNow.reduce((t, r) => t + r.amount, 0);
 
-  drawTrack('t', shareTotals(monthRows(THIS_M).map((r) => ({ share: r.share, amount: r.amount }))));
+  // レシートが1枚も無い月に空の枠だけ見せない
+  const empty = rowsNow.length === 0;
+  $('#stats-empty').hidden = !empty;
+  $('#stats-cats').hidden = empty;
+  $('#stats-share').hidden = empty;
 
-  const now = monthRows(THIS_M).reduce((s, r) => s + r.amount, 0);
-  const prev = monthRows(PREV_M).reduce((s, r) => s + r.amount, 0);
+  if (!empty) {
+    // 費目別は1系列なので単色。長さだけで比べ、金額は棒の右に置く
+    const by = {};
+    receipts.filter((r) => r.month === THIS_M)
+      .forEach((r) => r.items.forEach((i) => { by[i.c] = (by[i.c] || 0) + i.a; }));
+    // 返品や割引で合計がマイナスになる費目もそのまま出す（消すと内訳が合わなくなる）
+    const rows = Object.entries(by).filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
+    const max = Math.max(...rows.map((r) => Math.abs(r[1])), 1);
+    $('#cat-chart').innerHTML = rows.map(([c, v]) => `
+      <div class="bar">
+        <span class="catname">${esc(c)}</span>
+        <span class="lane"><span class="fill${v < 0 ? ' minus' : ''}" style="width:${Math.max((Math.abs(v) / max) * 100, 2)}%"></span></span>
+        <span class="v">${v.toLocaleString('ja-JP')}</span>
+      </div>`).join('');
+
+    // 誰のものかは金額だけだと比べにくいので割合も添える
+    const t = shareTotals(rowsNow.map((r) => ({ share: r.share, amount: r.amount })));
+    const base = SHARES.reduce((sum, k) => sum + Math.abs(t[k]), 0) || 1;
+    // 四捨五入すると合計が 101% になることがあるので、最後の1つで端数を吸収する
+    let left = 100;
+    SHARES.forEach((k, i) => {
+      const pct = i === SHARES.length - 1 ? left : Math.round((Math.abs(t[k]) / base) * 100);
+      left -= pct;
+      $(`#tg-${k}`).style.width = `${(Math.abs(t[k]) / base) * 100}%`;
+      $(`#tm-${k}`).textContent = `${yen(t[k])}（${Math.max(pct, 0)}%）`;
+    });
+  }
+
+  const prev = monthRows(PREV_M).reduce((t, r) => t + r.amount, 0);
   const diff = now - prev;
+  const word = diff > 0 ? '増えた' : diff < 0 ? '減った' : '同じ';
+  const cls = diff > 0 ? 'up' : diff < 0 ? 'down' : 'same';
   $('#compare').innerHTML = `
-    <div class="compare"><span class="k">今月（${monthLabel(THIS_M)}）</span><span class="v">${yen(now)}</span></div>
-    <div class="compare"><span class="k">先月（${monthLabel(PREV_M)}）</span><span class="v">${yen(prev)}</span></div>
-    <div class="compare"><span class="k">差</span><span class="delta ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${yen(diff)}</span></div>`;
+    <div class="cmprow"><span>今月（${monthLabel(THIS_M)}）</span><b>${yen(now)}</b></div>
+    <div class="cmprow"><span>先月（${monthLabel(PREV_M)}）</span><b>${yen(prev)}</b></div>
+    <div class="cmprow"><span>差</span><span class="delta ${cls}">${diff > 0 ? '+' : ''}${yen(diff)} ${word}</span></div>`;
 }
 
 // ===== ⑦ 精算の記録 =====
@@ -849,16 +895,19 @@ function invalidate(m) {
 function fetchMonth(m) {
   if (fetching.has(m)) return fetching.get(m);          // 同じ月を二重に取りに行かない
   const g = gen;
-  const p = API.call('summary', { month: m }).then(
+  // 自分が登録した取得だけを消す。新しい取得の登録まで消すと二重に走る
+  const clear = () => { if (fetching.get(m) === p) fetching.delete(m); };
+  let p;
+  p = API.call('summary', { month: m }).then(
     (res) => {
-      fetching.delete(m);
+      clear();
       if (g !== gen) return fetchMonth(m);              // 途中で保存された。取り直す
       receipts = receipts.filter((r) => r.month !== m).concat(res.receipts.map(fromServer));
       loadedMonths.add(m);
       fetchedAt.set(m, Date.now());
       return res;
     },
-    (e) => { fetching.delete(m); throw e; },
+    (e) => { clear(); throw e; },
   );
   fetching.set(m, p);
   return p;
