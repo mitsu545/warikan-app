@@ -531,9 +531,12 @@ function drawList(m = month) {
   drawTrack('l', shareTotals(monthRows(m).map((r) => ({ share: r.share, amount: r.amount }))));
   const box = $('#list-cards'); box.innerHTML = '';
   const list = receipts.filter((r) => r.month === m).sort((a, b) => (a.date < b.date ? 1 : -1));
+<<<<<<< HEAD
   $('#list-sum').textContent = list.length
     ? `${list.length}枚・${yen(list.reduce((t, r) => t + r.total, 0))}`
     : '';
+=======
+>>>>>>> origin/main
   if (!list.length) { box.innerHTML = '<p class="hint">この月の明細はまだありません</p>'; return; }
   let lastDay = '';
   list.forEach((r) => {
@@ -895,19 +898,29 @@ function invalidate(m) {
 function fetchMonth(m) {
   if (fetching.has(m)) return fetching.get(m);          // 同じ月を二重に取りに行かない
   const g = gen;
+<<<<<<< HEAD
   // 自分が登録した取得だけを消す。新しい取得の登録まで消すと二重に走る
   const clear = () => { if (fetching.get(m) === p) fetching.delete(m); };
   let p;
   p = API.call('summary', { month: m }).then(
     (res) => {
       clear();
+=======
+  const p = API.call('summary', { month: m }).then(
+    (res) => {
+      fetching.delete(m);
+>>>>>>> origin/main
       if (g !== gen) return fetchMonth(m);              // 途中で保存された。取り直す
       receipts = receipts.filter((r) => r.month !== m).concat(res.receipts.map(fromServer));
       loadedMonths.add(m);
       fetchedAt.set(m, Date.now());
       return res;
     },
+<<<<<<< HEAD
     (e) => { clear(); throw e; },
+=======
+    (e) => { fetching.delete(m); throw e; },
+>>>>>>> origin/main
   );
   fetching.set(m, p);
   return p;
