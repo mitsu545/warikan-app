@@ -18,15 +18,15 @@
   /* 支払対象の色。dataviz の検証を通した組み合わせ（積み上げ順 共通→私→妻） */
   --common: #1baf7a;
   --me: #2a78d6;
-  --wife: #e87ba4;
+  --wife: #e0454f;
   /* 行の下地（薄い） */
   --tint-common: #e3f4ed;
   --tint-me: #e2ebfa;
-  --tint-wife: #fbe7ef;
+  --tint-wife: #fbe5e6;
   /* 大きなボタンの塗り。白文字が読める濃さにしてある */
   --fill-common: #13805a;
   --fill-me: #1f5aa8;
-  --fill-wife: #c14172;
+  --fill-wife: #c42f3b;
   --fill-ink: #ffffff;
   /* 費目グラフは1系列なので単色 */
   --chart-1: #eb6834;
@@ -44,9 +44,9 @@
     --text: #e8ebf3; --muted: #99a1b5; --line: rgba(232,235,243,.13);
     --accent: #e4e8f4; --accent-ink: #1a1d25;
     --danger: #ff8095; --warn: #e6a33f; --ok: #48d39a;
-    --common: #199e70; --me: #3987e5; --wife: #d55181;
-    --tint-common: #1c2a26; --tint-me: #1c2531; --tint-wife: #2c1f27;
-    --fill-common: #199e70; --fill-me: #3987e5; --fill-wife: #d55181;
+    --common: #199e70; --me: #3987e5; --wife: #e25a62;
+    --tint-common: #1c2a26; --tint-me: #1c2531; --tint-wife: #2d1f21;
+    --fill-common: #199e70; --fill-me: #3987e5; --fill-wife: #e25a62;
     --fill-ink: #14171f;
     --chart-1: #d95926;
   }
@@ -56,9 +56,9 @@
   --text: #e8ebf3; --muted: #99a1b5; --line: rgba(232,235,243,.13);
   --accent: #e4e8f4; --accent-ink: #1a1d25;
   --danger: #ff8095; --warn: #e6a33f; --ok: #48d39a;
-  --common: #199e70; --me: #3987e5; --wife: #d55181;
-  --tint-common: #1c2a26; --tint-me: #1c2531; --tint-wife: #2c1f27;
-  --fill-common: #199e70; --fill-me: #3987e5; --fill-wife: #d55181;
+  --common: #199e70; --me: #3987e5; --wife: #e25a62;
+  --tint-common: #1c2a26; --tint-me: #1c2531; --tint-wife: #2d1f21;
+  --fill-common: #199e70; --fill-me: #3987e5; --fill-wife: #e25a62;
   --fill-ink: #14171f;
   --chart-1: #d95926;
 }
@@ -453,3 +453,45 @@ input::placeholder { color: var(--muted); opacity: .65; }
 /* 一覧カード：写真があるレシートの印（実物は詳細で開く） */
 .rcard .nophoto.has { color: var(--me); gap: 2px; flex-direction: column; font-size: 10px; font-weight: 800; }
 .rcard .nophoto.has .ico { width: 20px; height: 20px; }
+
+/* ===== 明細：上に固定する帯（月送り＋締める）===== */
+.list-top { position: sticky; top: 0; z-index: 6; margin: 0 -18px 10px; padding: 8px 18px 10px; background: var(--bg); box-shadow: 0 6px 10px -8px var(--sd); }
+.list-top .monthnav { margin-bottom: 8px; }
+.closebar { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 8px 12px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); text-align: left; }
+.closebar .grow { flex: 1; min-width: 0; }
+.closebar b { display: block; font-size: 15px; }
+.closebar small { display: block; font-size: 11px; opacity: .8; }
+.closebar .ico { width: 20px; height: 20px; flex: none; }
+.closebar.done { background: var(--bg); color: var(--text); box-shadow: var(--sh-up-sm); }
+
+/* ===== 明細：写真は一覧に出さない（詳細で見る）===== */
+.rcard { grid-template-columns: minmax(0, 1fr); }
+.rcard .pic { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; color: var(--muted); }
+.rcard .pic .ico { width: 14px; height: 14px; }
+
+/* ===== 明細：週ごとに折りたたむ ===== */
+.week { margin-bottom: 8px; }
+.wk-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border-radius: 14px; box-shadow: var(--sh-up-sm); text-align: left; font-size: 14px; }
+.wk-head .caret { width: 16px; flex: none; color: var(--muted); transition: transform .15s; }
+.week.open .wk-head .caret { transform: rotate(90deg); }
+.wk-head .range { flex: 1; min-width: 0; font-weight: 800; }
+.wk-head .wk-sum { flex: none; font-size: 13px; color: var(--muted); font-weight: 700; }
+.wk-head .now { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--accent); color: var(--accent-ink); }
+.wk-body { padding-top: 8px; }
+
+/* ===== 明細：固定費のチェックリスト ===== */
+.fx-count { float: right; font-size: 12px; color: var(--muted); }
+/* 1段目：チェック・名前・写真、2段目：金額。狭いスマホでも名前が縦書きにならない */
+.lfx { display: grid; grid-template-columns: 24px minmax(0, 1fr) 40px; grid-template-areas: "chk name photo" "chk amt photo"; align-items: center; column-gap: 8px; row-gap: 4px; padding: 8px 8px 8px 10px; margin-bottom: 8px; border-radius: 14px; background: var(--tint-common); border-left: 5px solid var(--common); }
+.lfx.me { background: var(--tint-me); border-left-color: var(--me); }
+.lfx.wife { background: var(--tint-wife); border-left-color: var(--wife); }
+.lfx .chk { grid-area: chk; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; box-shadow: var(--sh-in-sm); color: transparent; font-weight: 900; font-size: 14px; }
+.lfx .chk.on { background: var(--ok); color: #fff; box-shadow: none; }
+.lfx .lfx-name { grid-area: name; min-width: 0; font-weight: 800; font-size: 14px; overflow-wrap: anywhere; }
+.lfx .lfx-name small { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
+.lfx .r-amt { grid-area: amt; min-width: 0; width: 150px; max-width: 100%; }
+.lfx .r-amt input { width: 100%; min-width: 0; padding: 6px 6px; font-size: 15px; background: var(--bg); box-shadow: var(--sh-in-sm); }
+.lfx .lfx-photo { grid-area: photo; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: var(--muted); box-shadow: var(--sh-up-sm); }
+.lfx .lfx-photo.has { color: var(--me); box-shadow: var(--sh-in-sm); }
+.lfx .lfx-photo .ico { width: 20px; height: 20px; }
+.lightbox .lb-btn { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 12px 18px; border-radius: 999px; background: #fff; color: #111; font-weight: 800; }

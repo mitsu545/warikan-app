@@ -72,7 +72,7 @@
 <!-- ② 確認・仕訳 -->
 <section id="v-review" class="view" hidden>
   <header class="subhead"><button class="iconbtn" id="r-back" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2 id="r-title">確認・仕訳</h2></header>
-  <p class="purpose"><b>AI の読み取りを確かめて直す</b>場所です。品目ごとに 共通 → 私 → 妻 をタップで選べます。</p>
+  <p class="purpose"><b>AI の読み取りを確かめて直す</b>場所です。品目ごとに 共通 → <span data-name="me">私</span> → <span data-name="wife">妻</span> をタップで選べます。</p>
 
   <button class="shot" id="r-shot" type="button">
     <img id="r-photo" alt="レシートの写真">
@@ -92,16 +92,16 @@
     <div class="track"><span class="seg common" id="sg-common"></span><span class="seg me" id="sg-me"></span><span class="seg wife" id="sg-wife"></span></div>
     <ul class="legend">
       <li><i class="dot common"></i>共通 <b id="sm-common">0円</b></li>
-      <li><i class="dot me"></i>私 <b id="sm-me">0円</b></li>
-      <li><i class="dot wife"></i>妻 <b id="sm-wife">0円</b></li>
+      <li><i class="dot me"></i><span data-name="me">私</span> <b id="sm-me">0円</b></li>
+      <li><i class="dot wife"></i><span data-name="wife">妻</span> <b id="sm-wife">0円</b></li>
     </ul>
   </div>
 
   <div class="bulk" id="bulk">
     <span class="bulk-label">まとめて</span>
     <button type="button" data-bulk="common">全部 共通</button>
-    <button type="button" data-bulk="me">全部 私</button>
-    <button type="button" data-bulk="wife">全部 妻</button>
+    <button type="button" data-bulk="me">全部 <span data-name="me">私</span></button>
+    <button type="button" data-bulk="wife">全部 <span data-name="wife">妻</span></button>
   </div>
 
   <ul id="r-rows" class="rows compact"></ul>
@@ -120,7 +120,7 @@
     <label class="field"><span>日付</span><input type="date" id="m-date"></label>
     <div class="field-grid">
       <label class="field"><span>費目</span><select id="m-cat"></select></label>
-      <label class="field"><span>誰が払った？</span><button class="pill" id="m-payer" type="button">私</button></label>
+      <label class="field"><span>誰が払った？</span><button class="pill" id="m-payer" type="button" data-p="me">私</button></label>
     </div>
     <p class="sec-label" style="margin-top:6px">誰の分？</p>
     <div class="row common" id="m-row" style="margin:0">
@@ -138,31 +138,40 @@
     <span class="notice-dot"></span>
     <span class="grow">デモのデータです<small>設定で GAS の URL と合言葉を入れると本物になります</small></span>
   </div>
-  <div class="monthnav">
-    <button type="button" id="prev-m" aria-label="前の月"><svg class="ico"><use href="#i-back"/></svg></button>
-    <span class="mcenter"><span id="list-month"></span><small id="list-sum"></small></span>
-    <button type="button" id="next-m" aria-label="次の月"><svg class="ico flip"><use href="#i-back"/></svg></button>
-    <button type="button" id="refresh-m" aria-label="最新を取りに行く"><svg class="ico"><use href="#i-sync"/></svg></button>
+  <div class="list-top">
+    <div class="monthnav">
+      <button type="button" id="prev-m" aria-label="前の月"><svg class="ico"><use href="#i-back"/></svg></button>
+      <span class="mcenter"><span id="list-month"></span><small id="list-sum"></small></span>
+      <button type="button" id="next-m" aria-label="次の月"><svg class="ico flip"><use href="#i-back"/></svg></button>
+      <button type="button" id="refresh-m" aria-label="最新を取りに行く"><svg class="ico"><use href="#i-sync"/></svg></button>
+    </div>
+    <button class="closebar" data-go="close" type="button">
+      <svg class="ico"><use href="#i-lock"/></svg>
+      <span class="grow"><b id="list-close-txt">この月を締める</b><small id="list-close-sub">固定費を足して精算額を確定</small></span>
+      <svg class="ico flip"><use href="#i-back"/></svg>
+    </button>
   </div>
   <p class="sync" id="list-sync" hidden>最新を確認しています…</p>
   <div class="card">
     <div class="track"><span class="seg common" id="lg-common"></span><span class="seg me" id="lg-me"></span><span class="seg wife" id="lg-wife"></span></div>
     <ul class="legend">
       <li><i class="dot common"></i>共通 <b id="lm-common">0円</b></li>
-      <li><i class="dot me"></i>私 <b id="lm-me">0円</b></li>
-      <li><i class="dot wife"></i>妻 <b id="lm-wife">0円</b></li>
+      <li><i class="dot me"></i><span data-name="me">私</span> <b id="lm-me">0円</b></li>
+      <li><i class="dot wife"></i><span data-name="wife">妻</span> <b id="lm-wife">0円</b></li>
     </ul>
     <div class="paidby">
-      <div><span class="k me">私が払った</span><b id="paid-me">0円</b></div>
-      <div><span class="k wife">妻が払った</span><b id="paid-wife">0円</b></div>
+      <div><span class="k me"><span data-name="me">私</span>が払った</span><b id="paid-me">0円</b></div>
+      <div><span class="k wife"><span data-name="wife">妻</span>が払った</span><b id="paid-wife">0円</b></div>
     </div>
     <p class="paidby-note">レシート分だけの金額です。固定費は含みません</p>
   </div>
+  <div class="card" id="lfx-card">
+    <p class="field-title">この月の固定費 <span class="fx-count" id="lfx-count"></span></p>
+    <p class="hint" style="margin-top:0">金額を入れるとチェックが付きます。払わない月は 0 を入れてください。📷 で請求書などの写真も付けられます</p>
+    <div id="lfx-list"></div>
+    <input type="file" id="lfx-file" accept="image/*" hidden>
+  </div>
   <div id="list-cards"></div>
-  <button class="action" data-go="close">
-    <svg class="ico"><use href="#i-lock"/></svg>
-    <span class="action-txt">この月を締める<small id="list-close-sub">固定費を足して精算額を確定</small></span>
-  </button>
 </section>
 
 <!-- ④ レシート詳細 -->
@@ -245,8 +254,8 @@
     <div class="track"><span class="seg common" id="tg-common"></span><span class="seg me" id="tg-me"></span><span class="seg wife" id="tg-wife"></span></div>
     <ul class="legend">
       <li><i class="dot common"></i>共通 <b id="tm-common">0円</b></li>
-      <li><i class="dot me"></i>私 <b id="tm-me">0円</b></li>
-      <li><i class="dot wife"></i>妻 <b id="tm-wife">0円</b></li>
+      <li><i class="dot me"></i><span data-name="me">私</span> <b id="tm-me">0円</b></li>
+      <li><i class="dot wife"></i><span data-name="wife">妻</span> <b id="tm-wife">0円</b></li>
     </ul>
   </div>
 
@@ -274,7 +283,7 @@
     <div class="field-grid">
       <label class="field"><span>日付</span><input type="date" id="s-date"></label>
       <label class="field"><span>金額</span><input type="number" id="s-amt" inputmode="numeric"></label>
-      <label class="field"><span>向き</span><button class="pill" id="s-dir" type="button">妻 → 私</button></label>
+      <label class="field"><span>向き</span><button class="pill" id="s-dir" type="button" data-dir="wife_to_me"></button></label>
       <label class="field"><span>方法</span><select id="s-method"><option>振込</option><option>現金</option><option>PayPay</option><option>その他</option></select></label>
     </div>
     <label class="field"><span>メモ</span><input type="text" id="s-memo" placeholder="例：9月分"></label>
@@ -290,13 +299,20 @@
 <!-- ⑧ 設定 -->
 <section id="v-settings" class="view" hidden>
   <header class="apphead"><h1 class="logo">設定</h1></header>
-  <p class="purpose">GAS の URL と合言葉、自分が夫か妻かを決める場所です。<b>最初に 1 回だけ</b>やれば十分です。</p>
+  <p class="purpose">GAS の URL と合言葉、2人の呼び名、このスマホがどちらのものかを決める場所です。<b>最初に 1 回だけ</b>やれば十分です。</p>
 
   <div class="card">
-    <p class="field-title">このスマホの持ち主</p>
+    <p class="field-title">2人の呼び名</p>
+    <p class="hint" style="margin-top:0">画面の「私」「妻」がこの名前になります。色は変わりません（<b style="color:var(--me)">青</b>・<b style="color:var(--wife)">赤</b>）。2台で共通です</p>
+    <div class="field-grid">
+      <label class="field"><span><i class="dot me"></i> 青の人</span><input type="text" id="name-me" maxlength="10" placeholder="私"></label>
+      <label class="field"><span><i class="dot wife"></i> 赤の人</span><input type="text" id="name-wife" maxlength="10" placeholder="妻"></label>
+    </div>
+    <button class="ghost" id="name-save" type="button"><svg class="ico"><use href="#i-check"/></svg>呼び名を保存</button>
+    <p class="field-title" style="margin-top:16px">このスマホの持ち主</p>
     <div class="segmented">
-      <label><input type="radio" name="owner" value="me" checked><span>私</span></label>
-      <label><input type="radio" name="owner" value="wife"><span>妻</span></label>
+      <label><input type="radio" name="owner" value="me" checked><span data-name="me">私</span></label>
+      <label><input type="radio" name="owner" value="wife"><span data-name="wife">妻</span></label>
     </div>
   </div>
 
