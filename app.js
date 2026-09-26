@@ -755,6 +755,7 @@ async function renderDetail() {
     <tr><td>お店</td><td>${esc(r.store)}</td></tr>
     <tr><td>支払った人</td><td>${PERSON[r.payer]}</td></tr>
     <tr class="total"><td>合計</td><td>${yen(r.total)}</td></tr>`;
+  drawSplit(r);
   const ul = $('#d-rows'); ul.innerHTML = '';
   r.items.forEach((it, i) => {
     const li = document.createElement('li');
@@ -768,6 +769,25 @@ async function renderDetail() {
     ul.appendChild(li);
   });
 }
+// 共通を半分にすると 0.5円が出ることがある。レシート1枚では切り捨てずにそのまま見せる
+const yenHalf = (v) => (Number.isInteger(v) ? yen(v)
+  : `${v.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}円`);
+// このレシートの小計（共通・私・妻）と、1人ずつの負担の計
+function drawSplit(r) {
+  const t = shareTotals(r.items.map((i) => ({ share: i.s, amount: i.a })));
+  const half = t.common / 2;
+  const dot = (k) => `<i class="dot ${k}"></i>`;
+  $('#d-split').innerHTML = `
+    <tr><td>${dot('common')}共通</td><td>${yen(t.common)}</td></tr>
+    <tr><td>${dot('me')}私の分</td><td>${yen(t.me)}</td></tr>
+    <tr><td>${dot('wife')}妻の分</td><td>${yen(t.wife)}</td></tr>
+    <tr class="total"><td>私の負担 計</td><td>${yenHalf(half + t.me)}<small>共通の半分 ${yenHalf(half)} ＋ 私の分 ${yen(t.me)}</small></td></tr>
+    <tr class="total"><td>妻の負担 計</td><td>${yenHalf(half + t.wife)}<small>共通の半分 ${yenHalf(half)} ＋ 妻の分 ${yen(t.wife)}</small></td></tr>`;
+  const odd = t.common % 2 !== 0;
+  $('#d-split-note').hidden = !odd;
+  if (odd) $('#d-split-note').textContent = '共通が奇数なので半分に0.5円が出ます。精算では月の合計で1回だけ1円未満を切り捨てます';
+}
+
 const ADJUST = '調整（税・割引）';
 const openReceipt = () => receipts.find((x) => x.id === openId);
 // 書き換える操作は本物のデータにだけ行う
