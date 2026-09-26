@@ -19,12 +19,14 @@ var SHEETS = {
   'レシート':        ['receipt_id', 'date', 'store', 'total', 'payer', 'entered_by', 'photo_id', 'has_items', 'month', 'created_at'],
   '明細':            ['id', 'receipt_id', 'item', 'amount', 'share', 'category', 'rule_applied'],
   '固定費テンプレート': ['id', 'name', 'kind', 'amount_default', 'payer', 'share', 'active'],
-  '固定費実績':      ['month', 'template_id', 'name', 'amount', 'payer', 'share'],
+  '固定費実績':      ['month', 'template_id', 'name', 'amount', 'payer', 'share', 'photo_id'],
   'ルール':          ['keyword', 'share', 'created_at'],
   '月次精算':        ['month', 'paid_me', 'paid_wife', 'burden_me', 'burden_wife', 'settle_amount', 'settle_direction', 'closed_at'],
   '精算記録':        ['id', 'month', 'date', 'direction', 'amount', 'method', 'memo', 'created_at'],
   // 消したレシートの避難先。中身を丸ごと残すので、間違えて消しても戻せる
-  'ゴミ箱':          ['deleted_at', 'deleted_by', 'receipt_id', 'month', 'receipt_json', 'items_json']
+  'ゴミ箱':          ['deleted_at', 'deleted_by', 'receipt_id', 'month', 'receipt_json', 'items_json'],
+  // 2台で共通の設定（いまは2人の呼び名だけ）
+  '設定':            ['key', 'value']
 };
 
 var SHARES = ['common', 'me', 'wife'];
@@ -32,7 +34,7 @@ var SHARES = ['common', 'me', 'wife'];
 // このコードの版。貼り替えるたびに変える。
 // アプリの設定画面で「つなぐ」を押すとこの文字が出るので、
 // 新バージョンでデプロイできているかを目で確かめられる。
-var VERSION = '2026-09-26b / 段階5（修正・削除・固定費・締め）';
+var VERSION = '2026-09-26c / 名前・固定費の写真';
 
 // ===== 最初に 1 回だけ実行する =====
 function setup() {
@@ -102,6 +104,10 @@ function doPost(e) {
       case 'close':         return json(actionClose(req));
       case 'settle':        return json(actionSettle(req));
       case 'deleteSettle':  return json(actionDeleteSettle(req));
+      // 2人の呼び名・固定費の写真
+      case 'saveNames':     return json(actionSaveNames(req));
+      case 'setFixedPhoto': return json(actionSetFixedPhoto(req));
+      case 'fixedPhoto':    return json(actionFixedPhoto(req));
       default:        return json({ ok: false, error: '知らない action です：' + req.action });
     }
   } catch (err) {
@@ -204,7 +210,8 @@ function actionSummary(req) {
     closedMonths: rows(ss, '月次精算').map(function (c) {
       return { month: c.month, amount: num(c.settle_amount), direction: c.settle_direction, closed_at: c.closed_at };
     }),
-    settles: rows(ss, '精算記録')
+    settles: rows(ss, '精算記録'),
+    names: readNames(ss)
   };
   // 記憶は 100KB まで。日本語は1文字で3バイトになるので余裕をみる。
   // 入りきらなくても集計は返す（覚えられないだけ）
@@ -402,7 +409,8 @@ function readTemplates(ss) {
 function fixedRowsOf(ss, m) {
   return rows(ss, '固定費実績').filter(function (f) { return f.month === m; }).map(function (f) {
     return { month: f.month, template_id: String(f.template_id || ''), name: String(f.name || ''),
-             amount: f.amount, payer: person(f.payer), share: share(f.share) };   // amount が null＝未入力
+             amount: f.amount, payer: person(f.payer), share: share(f.share),   // amount が null＝未入力
+             has_photo: Boolean(f.photo_id) };
   });
 }
 
@@ -440,15 +448,88 @@ function actionSaveFixed(req) {
   if (!/^\d{4}-\d{2}$/.test(m)) return { ok: false, error: '月の指定が正しくありません' };
   var items = req.items || [];
   return withLock(function (ss) {
-    var fs = sheet(ss, '固定費実績');
+    var fs = ensureColumn(sheet(ss, '固定費実績'), 'photo_id');
+    // 入れ替える前に、付いている写真を覚えておく（行を消しても写真は残す）
+    var pics = {};
+    rows(ss, '固定費実績').forEach(function (f) { if (f.month === m && f.photo_id) pics[fixedKey(f)] = f.photo_id; });
     rowNumbersWhere(fs, 'month', m).forEach(function (n) { fs.deleteRow(n); });
     items.forEach(function (f) {
       var blank = f.amount === null || f.amount === undefined || f.amount === '';
-      appendObj(fs, { month: m, template_id: f.template_id || '', name: String(f.name || '').slice(0, 40),
-                      amount: blank ? '' : num(f.amount), payer: person(f.payer), share: share(f.share) });
+      var row = { month: m, template_id: f.template_id || '', name: String(f.name || '').slice(0, 40),
+                  amount: blank ? '' : num(f.amount), payer: person(f.payer), share: share(f.share) };
+      row.photo_id = pics[fixedKey(row)] || '';
+      appendObj(fs, row);
     });
     bumpSumVersion();
     return { ok: true, reclosed: recloseIfClosed(ss, [m]) };
+  });
+}
+
+// 固定費の1行を見分ける鍵。テンプレートから来たものは ID、今月だけの項目は名前
+function fixedKey(f) { return f.template_id ? 't:' + f.template_id : 'n:' + String(f.name || ''); }
+
+// 固定費に写真（請求書など）を付ける。新しい写真を先に保存してから古い写真を捨てる
+function actionSetFixedPhoto(req) {
+  var m = String(req.month || '');
+  if (!/^\d{4}-\d{2}$/.test(m)) return { ok: false, error: '月の指定が正しくありません' };
+  if (!req.photo) return { ok: false, error: '写真がありません' };
+  var key = fixedKey({ template_id: String(req.template_id || ''), name: String(req.name || '') });
+  return withLock(function (ss) {
+    var fs = ensureColumn(sheet(ss, '固定費実績'), 'photo_id');
+    var list = rows(ss, '固定費実績');
+    var at = -1;
+    for (var i = 0; i < list.length; i++) { if (list[i].month === m && fixedKey(list[i]) === key) { at = i; break; } }
+    if (at < 0) return { ok: false, error: 'その固定費はまだ保存されていません。先に一覧を開き直してください' };
+    var newId = savePhoto(req.photo, 'fixed-' + m + '-' + (req.template_id || req.name));
+    var old = list[at].photo_id;
+    fs.getRange(at + 2, colIndex(fs).photo_id).setValue(newId);
+    if (old) { try { DriveApp.getFileById(old).setTrashed(true); } catch (e) {} }
+    bumpSumVersion();
+    return { ok: true };
+  });
+}
+
+// 固定費の写真を取り出す（ドライブは公開しないので必ずここを通す）
+function actionFixedPhoto(req) {
+  var m = String(req.month || '');
+  var key = fixedKey({ template_id: String(req.template_id || ''), name: String(req.name || '') });
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var f = rows(ss, '固定費実績').filter(function (x) { return x.month === m && fixedKey(x) === key; })[0];
+  if (!f || !f.photo_id) return { ok: true, photo: '', reason: 'なし' };
+  try {
+    var b = DriveApp.getFileById(f.photo_id).getBlob();
+    return { ok: true, photo: 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()) };
+  } catch (e) {
+    return { ok: true, photo: '', reason: '見つかりません' };
+  }
+}
+
+// ===== 2人の呼び名（2台で共通） =====
+function readNames(ss) {
+  var out = { me: '私', wife: '妻' };
+  if (!ss.getSheetByName('設定')) return out;
+  rows(ss, '設定').forEach(function (r) {
+    if (r.key === 'name_me' && r.value) out.me = String(r.value);
+    if (r.key === 'name_wife' && r.value) out.wife = String(r.value);
+  });
+  return out;
+}
+// 名前に使えない文字を落とす（画面に埋め込むので記号は入れない）
+function cleanName(v, def) {
+  var s = String(v || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 10);
+  return s || def;
+}
+function actionSaveNames(req) {
+  var names = { me: cleanName(req.me, '私'), wife: cleanName(req.wife, '妻') };
+  return withLock(function (ss) {
+    var sh = ensureSheet(ss, '設定');
+    [['name_me', names.me], ['name_wife', names.wife]].forEach(function (kv) {
+      var at = rowNumbersWhere(sh, 'key', kv[0]);
+      if (at.length) writeRow(sh, at[0], { key: kv[0], value: kv[1] });
+      else appendObj(sh, { key: kv[0], value: kv[1] });
+    });
+    bumpSumVersion();
+    return { ok: true, names: readNames(ss) };
   });
 }
 
@@ -790,6 +871,13 @@ function ensureSheet(ss, name) {
   var head = SHEETS[name];
   sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#eceff6');
   sh.setFrozenRows(1);
+  return sh;
+}
+
+// あとから足した列が古いシートに無ければ、右端に見出しを足す（setup をやり直さなくて済む）
+function ensureColumn(sh, name) {
+  var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (head.indexOf(name) < 0) sh.getRange(1, head.length + 1).setValue(name);
   return sh;
 }
 
