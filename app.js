@@ -869,7 +869,8 @@ $('#cfg-test').addEventListener('click', async () => {
   st.textContent = '確かめています…';
   try {
     const res = await API.call('ping');
-    st.innerHTML = `<b style="color:var(--ok)">つながりました</b>（シート ${res.sheets.length} 枚を確認）`;
+    st.innerHTML = `<b style="color:var(--ok)">つながりました</b>（シート ${res.sheets.length} 枚）`
+      + `<br><small>動いているコード：${esc(res.version || '不明（古い版です。新バージョンでデプロイしてください）')}</small>`;
     toast('つながりました');
   } catch (e) {
     st.innerHTML = `<b style="color:var(--danger)">${esc(e.message)}</b>`;

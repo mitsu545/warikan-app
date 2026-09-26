@@ -27,6 +27,11 @@ var SHEETS = {
 
 var SHARES = ['common', 'me', 'wife'];
 
+// このコードの版。貼り替えるたびに変える。
+// アプリの設定画面で「つなぐ」を押すとこの文字が出るので、
+// 新バージョンでデプロイできているかを目で確かめられる。
+var VERSION = '2026-09-26 / 段階3（読み取り・速度改善）';
+
 // ===== 最初に 1 回だけ実行する =====
 function setup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -78,7 +83,7 @@ function doPost(e) {
     }
 
     switch (req.action) {
-      case 'ping':    return json({ ok: true, message: 'つながりました', sheets: Object.keys(SHEETS) });
+      case 'ping':    return json({ ok: true, message: 'つながりました', sheets: Object.keys(SHEETS), version: VERSION });
       case 'save':    return json(actionSave(req));
       case 'summary': return json(actionSummary(req));
       case 'receipt': return json(actionReceipt(req));
@@ -395,7 +400,7 @@ function normalizeOcr(text) {
 function テスト読み取り() {
   var key = prop('GEMINI_KEY');
   var out = [];
-  out.push('■ このコードの版：段階3（読み取りあり）');
+  out.push('■ このコードの版：' + VERSION);
   out.push('■ モデル：' + geminiModel());
   out.push('■ GEMINI_KEY：' + (key ? '登録あり（' + key.length + '文字）' : '★未登録★'));
   if (!key) {
