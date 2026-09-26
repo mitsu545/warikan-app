@@ -372,6 +372,9 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .calc th:first-child, .calc td:first-child { text-align: left; color: var(--muted); font-weight: 700; }
 .calc tr:last-child th, .calc tr:last-child td { border-bottom: 0; }
 .calc .total td { font-weight: 800; color: var(--text); }
+/* レシート詳細の小計。色の丸で「共通・私・妻」を帯グラフと同じ色で示す */
+.calc.split td:first-child .dot { display: inline-block; margin-right: 7px; vertical-align: 1px; }
+.calc.split small { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
 .calc .pay { color: var(--danger); font-weight: 800; }
 .calc .get { color: var(--fill-me); font-weight: 800; }
 
