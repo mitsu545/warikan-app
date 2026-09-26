@@ -52,6 +52,12 @@
     <svg class="ico flip"><use href="#i-back"/></svg>
   </button>
 
+  <button class="notice" id="home-close" hidden>
+    <span class="notice-dot"></span>
+    <span class="grow"><span id="close-txt"></span><small>固定費を入れて締めると、精算額が決まります</small></span>
+    <svg class="ico flip"><use href="#i-back"/></svg>
+  </button>
+
   <label class="action primary">
     <svg class="ico"><use href="#i-camera"/></svg>
     <span class="action-txt">レシートを撮る<small>撮るとAIが店名と金額を読み取ります</small></span>
@@ -65,7 +71,7 @@
 
 <!-- ② 確認・仕訳 -->
 <section id="v-review" class="view" hidden>
-  <header class="subhead"><button class="iconbtn" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2>確認・仕訳</h2></header>
+  <header class="subhead"><button class="iconbtn" id="r-back" data-go="home"><svg class="ico"><use href="#i-back"/></svg></button><h2 id="r-title">確認・仕訳</h2></header>
   <p class="purpose"><b>AI の読み取りを確かめて直す</b>場所です。品目ごとに 共通 → 私 → 妻 をタップで選べます。</p>
 
   <button class="shot" id="r-shot" type="button">
@@ -155,7 +161,7 @@
   <div id="list-cards"></div>
   <button class="action" data-go="close">
     <svg class="ico"><use href="#i-lock"/></svg>
-    <span class="action-txt">この月を締める<small>固定費を足して精算額を確定</small></span>
+    <span class="action-txt">この月を締める<small id="list-close-sub">固定費を足して精算額を確定</small></span>
   </button>
 </section>
 
@@ -169,18 +175,31 @@
   </div>
   <p class="sec-label">品目と誰の分か</p>
   <ul id="d-rows" class="rows compact readonly"></ul>
-  <button class="danger" disabled title="段階4で作ります">このレシートを削除（段階4で作ります）</button>
+
+  <button class="action primary" id="d-edit" type="button">
+    <svg class="ico"><use href="#i-pen"/></svg>
+    <span class="action-txt">このレシートを直す<small>店名・日付・金額・誰の分か</small></span>
+  </button>
+  <div class="d-photo-ops">
+    <label class="ghost" id="d-photo-set">
+      <svg class="ico"><use href="#i-camera"/></svg><span id="d-photo-set-txt">写真を差し替える</span>
+      <input type="file" id="d-photo-file" accept="image/*" hidden>
+    </label>
+    <button class="ghost" id="d-photo-del" type="button">写真だけ消す</button>
+  </div>
+  <button class="danger" id="d-delete" type="button">このレシートを削除</button>
+  <p class="hint center">削除したレシートはスプレッドシートの「ゴミ箱」に残るので、あとから戻せます</p>
 </section>
 
 <!-- ⑤ 月末締め -->
 <section id="v-close" class="view" hidden>
   <header class="subhead"><button class="iconbtn" data-go="list"><svg class="ico"><use href="#i-back"/></svg></button><h2>月末締め</h2></header>
-  <p class="purpose">その月の固定費を入れて、<b>精算額を確定する</b>場所です。締めた月はもう変わりません。</p>
+  <p class="purpose">その月の固定費を入れて、<b>精算額を確定する</b>場所です。締めたあとに直すと、確認のうえ差額が未精算に足されます。</p>
 
   <div class="card">
     <p class="field-title">この月の固定費を入れる</p>
     <p class="hint" id="c-range" style="margin-top:0"></p>
-    <p class="hint" style="margin-top:0">毎月変わるものは空欄です。埋めないと締められません。<b>誰の分か</b>もここで変えられます</p>
+    <p class="hint" style="margin-top:0">電気代などは<b>請求が来た月</b>に入れます（8月分の請求が9月に来たら9月に入れる）。空欄のままだと締められません</p>
     <div id="fx-list" class="rows"></div>
     <button class="ghost" id="fx-add"><svg class="ico"><use href="#i-plus"/></svg>今月だけの項目を足す</button>
   </div>
@@ -228,6 +247,7 @@
 
   <div class="card">
     <p class="field-title">先月との比較</p>
+    <p class="hint" id="stats-early" hidden style="margin-top:0"></p>
     <div class="cmp" id="compare"></div>
   </div>
 </section>
@@ -289,6 +309,10 @@
     <p class="field-title">固定費テンプレート</p>
     <p class="hint" style="margin-top:0">1回登録すれば毎月の締めで呼び出されます。誰が払うか・誰の分かはここで決めます</p>
     <div id="tpl-list" class="rows"></div>
+    <div class="tpl-new">
+      <label class="field"><span>名前</span><input type="text" id="tpl-name" placeholder="例：家賃・電気代・Netflix"></label>
+      <label class="field"><span>毎月の金額</span><input type="number" id="tpl-amt" inputmode="numeric" placeholder="空欄＝毎月入力"></label>
+    </div>
     <button class="ghost" id="tpl-add"><svg class="ico"><use href="#i-plus"/></svg>固定費を追加</button>
   </div>
 
