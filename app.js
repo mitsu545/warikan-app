@@ -44,10 +44,23 @@ function fakePhoto(seed, w = 520, h = 340) {
 
 // ===== 今月・先月（今日の日付から毎回計算する）=====
 const ymOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
-const TODAY = new Date();
-const THIS_M = ymOf(TODAY);
-const PREV_M = ymOf(new Date(TODAY.getFullYear(), TODAY.getMonth() - 1, 1));
-let month = THIS_M;
+const todayStr = () => { const t = new Date(); return `${ymOf(t)}-${pad2(t.getDate())}`; };
+let THIS_M = '', PREV_M = '', month = '';
+// 月をまたいでアプリを開きっぱなしにしても、「今月」が古い月のままにならないようにする。
+// 見ている月（month）はここでは変えない。9月の明細を見ながら0時を過ぎて「締める」を押したら、
+// 締めるのは9月のまま（勝手に10月に変わると、違う月を締めてしまう）。
+// 月が変わったら、それまでの「今月」を返す
+function setToday() {
+  const t = new Date();
+  const now = ymOf(t);
+  if (now === THIS_M) return '';
+  const old = THIS_M;
+  THIS_M = now;
+  PREV_M = ymOf(new Date(t.getFullYear(), t.getMonth() - 1, 1));
+  if (!month || month > THIS_M) month = THIS_M;
+  return old;
+}
+setToday();
 
 // ===== 見本データ（GAS につながっていないときだけ使う）=====
 
@@ -104,15 +117,31 @@ const templates = [
   { id: 'f5', name: 'Netflix', kind: 'fixed', def: 1590, payer: 'me', share: 'common' },
   { id: 'f6', name: '妻のジム', kind: 'fixed', def: 8800, payer: 'wife', share: 'wife' },
 ];
-const LAST = { f2: 9840, f3: 4380, f4: 4200 };    // 先月の実額（初期値のヒントに使う）
-const LAST0 = { f2: 9120, f3: 5210, f4: 0 };      // 8月の実額（締め済み）
+const LAST = { f2: 9840, f3: 4380, f4: 4200 };    // 見本用：先月の実額（初期値のヒントに使う）
+const LAST0 = { f2: 9120, f3: 5210, f4: 0 };      // 見本用：先月の実額（締め済み）
+// テンプレート1件 → その月の1行（tid＝どのテンプレートから来たか。今月だけの項目は空）
+const fromTpl = (t) => ({ id: t.id, tid: t.id, name: t.name, kind: t.kind, payer: t.payer, share: t.share,
+  amount: t.kind === 'fixed' ? t.def : null });
+const activeTpl = () => templates.filter((t) => t.active !== false);
 // その月の実額。月ごとに持つ（変動費は未入力＝null から始める）
-const blankMonth = () => templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : null }));
+const blankMonth = () => activeTpl().map(fromTpl);
 const fxByMonth = {
   [THIS_M]: blankMonth(),
-  [PREV_M]: templates.map((t) => ({ ...t, amount: t.kind === 'fixed' ? t.def : (LAST0[t.id] ?? 0) })),
+  [PREV_M]: templates.map((t) => ({ ...fromTpl(t), amount: t.kind === 'fixed' ? t.def : (LAST0[t.id] ?? 0) })),
 };
-const fxOf = (m) => (fxByMonth[m] ||= blankMonth());
+const fxPrevByMonth = {};                         // サーバーから来た「先月の固定費」（目安の表示用）
+// 締めていない月は、あとから足したテンプレートも並べる（締めた月は中身を変えない）
+function fxOf(m) {
+  const list = (fxByMonth[m] ||= blankMonth());
+  if (!closed[m]) activeTpl().forEach((t) => { if (!list.some((f) => f.tid === t.id)) list.push(fromTpl(t)); });
+  return list;
+}
+// 先月いくらだったか（無ければ null）
+function lastAmount(m, f) {
+  if (!API.ready()) return LAST[f.id] ?? null;
+  const p = f.tid && (fxPrevByMonth[m] || []).find((x) => x.tid === f.tid);
+  return p && p.amount !== null ? p.amount : null;
+}
 
 // 精算の記録
 // 7月は精算済み、8月は締めたが未精算 → ホームに「未精算」が出る状態を見せる
@@ -179,13 +208,23 @@ const R = { home: renderHome, review: renderReview, manual: renderManual, list: 
   detail: renderDetail, close: renderClose, stats: renderStats, settle: renderSettle, settings: renderSettings };
 let view = 'home';
 function go(v) {
+  setToday();
+  if (v === 'close' && view !== 'close') closeUnlocked = false;   // 締めた月の確認は、開くたびに1回
   view = v;
   document.querySelectorAll('.view').forEach((s) => { s.hidden = s.id !== `v-${v}`; });
-  const tab = TABS.includes(v) ? v : PARENT[v];
+  const tab = TABS.includes(v) ? v : (v === 'review' && draft && draft.editId) ? 'list' : PARENT[v];
   document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
   R[v]?.();
   window.scrollTo(0, 0);
 }
+// 夜中に開きっぱなしにして翌月に戻ってきたら、今いるタブを今月で描き直す（入力中・締め中の画面は触らない）
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  const old = setToday();
+  if (!old || !TABS.includes(view)) return;
+  if (month === old) month = THIS_M;
+  go(view);
+});
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-go]');
   if (!b) return;
@@ -195,6 +234,16 @@ document.addEventListener('click', (e) => {
 
 // ===== ① ホーム =====
 function renderHome() {
+  // 月が変わった直後や、相手のスマホで足された分を取りに行き、届いたら描き直す
+  if (API.ready()) {
+    [THIS_M, PREV_M].forEach((m) => {
+      if (loadedMonths.has(m) && isFresh(m)) return;
+      fetchMonth(m).then(() => { if (view === 'home') drawHome(); }).catch(() => {});
+    });
+  }
+  drawHome();
+}
+function drawHome() {
   const s = calc(monthRows(THIS_M));
   $('#home-month').textContent = monthLabel(THIS_M);
   $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
@@ -209,7 +258,13 @@ function renderHome() {
     $('#unpaid-amt').textContent = yen(un.amount);
     $('#unpaid-sub').textContent = `${monthLabel(un.month)}分・${PERSON[un.dir === 'wife_to_me' ? 'wife' : 'me']}が渡す`;
   }
+  // 先月にレシートがあるのに締めていなければ知らせる（月初に忘れやすい）
+  const open = !closed[PREV_M] && (!API.ready() || loadedMonths.has(PREV_M))
+    && receipts.some((r) => r.month === PREV_M);
+  $('#home-close').hidden = !open;
+  if (open) $('#close-txt').textContent = `${monthLabel(PREV_M)}はまだ締めていません`;
 }
+$('#home-close').addEventListener('click', () => { month = PREV_M; go('close'); });
 function unpaid() {
   let owed = 0, m = null, dir = 'none';
   for (const [k, v] of Object.entries(closed)) {
@@ -273,6 +328,7 @@ async function readReceipt(photo) {
     const ed = draft.edited;                 // 人が先に打った欄は上書きしない
     if (!ed.store && r.store) draft.store = r.store;
     if (!ed.date && r.date) draft.date = r.date;
+    draft.dateUnread = !r.date;              // 読めなければ今日のまま。送る前に確かめる
     if (!ed.items && items.length) {
       draft.hasItems = true;
       draft.items = items.map((x) => ({ n: x.item, a: x.amount, s: 'common', c: 'その他' }));
@@ -312,8 +368,10 @@ function makeDraft(mode) {
       { n: '本麒麟 350ml', a: 158, s: 'wife', c: '食費' },
     ] };
 }
+const oneLine = () => !draft.hasItems && draft.items.length === 1;
 function draftRows() {
   const rows = draft.items.map((i) => ({ ...i, a: Number(i.a) || 0 }));
+  if (oneLine()) { rows[0].a = Number(draft.total) || 0; return rows; }   // 明細なし：1行＝合計
   const gap = (Number(draft.total) || 0) - rows.reduce((s, r) => s + r.a, 0);
   if (gap !== 0) rows.push({ n: '調整（税・割引）', a: gap, s: 'common', c: '食費', adjust: true });
   return rows;
@@ -325,15 +383,22 @@ function setVal(sel, v) { const el = $(sel); if (el !== document.activeElement) 
 function reviewBanner() {
   switch (draft.ocr) {
     case 'reading': return 'レシートを読んでいます…<small>数秒かかります。そのまま待つか、自分で入力しても大丈夫です</small>';
-    case 'done':    return '読み取りました<small><b>金額と店名を必ず確かめてください。</b>押すと写真を拡大します</small>';
+    case 'done':    return draft.dateUnread
+      ? '読み取りました<small><b>日付が読めなかったので今日にしています。</b>金額・店名・日付を確かめてください</small>'
+      : '読み取りました<small><b>金額と店名を必ず確かめてください。</b>押すと写真を拡大します</small>';
     case 'empty':   return '読み取れませんでした<small>写真は保存されます。合計と店名を入れてください</small>';
     case 'fail':    return `読み取りに失敗しました<small>${esc(draft.ocrError || '')}。手で入力すれば登録できます</small>`;
     case 'off':     return '設定がまだです<small>設定で GAS の URL と合言葉を入れると読み取りが使えます</small>';
+    case 'edit':    return '登録済みのレシートを直しています<small>直したら下の「直した内容で保存」を押してください</small>';
     default:        return draft.hasItems ? '' : '明細なしで登録します<small>合計だけの1行です。誰の分かを選んで送ってください</small>';
   }
 }
+const sendLabel = () => `<svg class="ico"><use href="#i-send"/></svg>${draft && draft.editId ? '直した内容で保存' : '送る'}`;
 function renderReview() {
   if (!draft) draft = makeDraft('items');
+  $('#r-title').textContent = draft.editId ? 'レシートを直す' : '確認・仕訳';
+  $('#r-back').dataset.go = draft.editId ? 'detail' : 'home';
+  if (!$('#r-send').disabled) $('#r-send').innerHTML = sendLabel();
   // 案内は写真の見出しの中に出す。写真がなくても案内だけは見せる
   $('#noitems-txt').innerHTML = reviewBanner() || '';
   $('#r-photo').src = draft.photo || '';
@@ -354,11 +419,12 @@ function drawRows() {
     li.className = `row ${it.s}${it.adjust ? ' adjust' : ''}`;
     li.dataset.i = i;
     const ro = it.adjust ? 'readonly' : '';
+    const roAmt = it.adjust || oneLine() ? 'readonly' : '';   // 明細なしの1行は合計と同じ額
     li.innerHTML = `
       <div class="r-main">
         <input class="name" type="text" value="${esc(it.n)}" ${ro}>
         <div class="r-sub">
-          <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${it.a}" ${ro}><span class="cur">円</span></div>
+          <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${it.a}" ${roAmt}><span class="cur">円</span></div>
           <button class="cat" type="button" ${it.adjust ? 'disabled' : ''}>${it.c}</button>
         </div>
       </div>
@@ -393,6 +459,7 @@ function syncAdjust() {
   const adj = rows.find((r) => r.adjust);
   if (Boolean(adj) !== Boolean(li)) { drawRows(); return; }   // 行が増減するときだけ作り直す
   if (li && adj) li.querySelector('.amt').value = adj.a;
+  if (oneLine()) { const a = $('#r-rows .row .amt'); if (a) a.value = rows[0].a; }
   drawTrack('s', shareTotals(rows.map((r) => ({ share: r.s, amount: r.a }))));
 }
 $('#bulk').addEventListener('click', (e) => {
@@ -401,6 +468,7 @@ $('#bulk').addEventListener('click', (e) => {
   drawRows();
 });
 $('#add-row').addEventListener('click', () => {
+  if (oneLine()) draft.items[0].a = Number(draft.total) || 0;   // 分けるときは合計から始める
   draft.items.push({ n: '', a: 0, s: 'common', c: 'その他' }); drawRows();
 });
 $('#r-total').addEventListener('input', (e) => { draft.edited.total = true; draft.total = Number(e.target.value) || 0; syncAdjust(); });
@@ -421,6 +489,7 @@ function syncDraft() {
   draft.total = Number($('#r-total').value) || 0;
   draft.store = $('#r-store').value.trim();
   if ($('#r-date').value) draft.date = $('#r-date').value;
+  if (oneLine()) { draft.items[0].n = $('#r-rows .row .name')?.value ?? draft.items[0].n; return; }
   document.querySelectorAll('#r-rows .row').forEach((li) => {
     const it = draft.items[li.dataset.i];
     if (!it) return;                                   // 調整行は draft.items にない
@@ -435,24 +504,79 @@ $('#r-send').addEventListener('click', async () => {
   if (!rows.length) { alert('品目がありません'); return; }
   if (!Number(draft.total)) { alert('合計を入れてください'); $('#r-total').focus(); return; }
   if (!API.ready()) { toast('設定で GAS の URL と合言葉を入れてください'); go('settings'); return; }
+  if (!checkDate(draft.date, draft.fromCamera && draft.dateUnread && !draft.edited.date)) return;
 
   const btn = $('#r-send');
-  btn.disabled = true; btn.textContent = '送信中…';
+  btn.disabled = true; btn.textContent = draft.editId ? '保存中…' : '確認中…';
   try {
-    const body = toServer(draft, rows, store.get(LS.owner, 'me'));
-    if (draft.photo && draft.fromCamera) body.photo = draft.photo;   // 写真はドライブへ
+    const d = draft;
+    const newM = d.date.slice(0, 7);
+    const body = toServer(d, rows, store.get(LS.owner, 'me'));
+    if (d.editId) {
+      // 直す：締めた月にかかるなら先に確かめる（元の月と、日付を変えた先の月の両方）
+      const note = closedNote([d.editMonth, newM]);
+      if (note && !confirm(`この内容で保存します。${note}`)) return;
+      const res = await API.call('update', Object.assign({ receipt_id: d.editId }, body));
+      (res.months || [d.editMonth, newM]).forEach(invalidate);
+      receipts = receipts.filter((r) => r.id !== d.editId);   // 詳細は保存後の中身を取り直す
+      month = newM; openId = d.editId;
+      reportReclosed(res.reclosed);
+      toast('直しました');
+      go('detail');
+      return;
+    }
+    if (!(await confirmNew(newM, d.date, Number(d.total)))) return;
+    btn.textContent = '送信中…';
+    if (d.photo && d.fromCamera) body.photo = d.photo;   // 写真はドライブへ
     const res = await API.call('save', body);
-    month = draft.date.slice(0, 7);
+    month = newM;
     invalidate(month);                    // 保存したぶんを必ず読み直す
+    reportReclosed(res.reclosed);
     toast(res.photo_saved ? `保存しました（${res.saved}品目・写真つき）` : `保存しました（${res.saved}品目）`);
     go('list');            // 一覧が自分で読み直す。ここで読み直すと二重に取りに行くことになる
   } catch (e) {
     alert(`送れませんでした。\n${e.message}`);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<svg class="ico"><use href="#i-send"/></svg>送る';
+    btn.innerHTML = sendLabel();
   }
 });
+
+// 日付がおかしくないか（未来の日付・読めずに今日にした日付）
+function checkDate(date, unread) {
+  if (date > todayStr() && !confirm(`日付が未来（${dayLabel(date)}）になっています。このまま送りますか？`)) return false;
+  if (unread && !confirm(`レシートの日付が読めなかったので、今日（${dayLabel(date)}）で登録します。\n\n別の日のレシートなら「キャンセル」を押して日付を直してください。`)) return false;
+  return true;
+}
+
+// 新しく登録する前の確認：締めた月か、二重登録ではないか
+async function confirmNew(m, date, total) {
+  // 相手のスマホで今しがた登録したかもしれないので、30秒以内でも必ず最新を見てから比べる
+  try { await fetchMonth(m); } catch (e) { /* 見られなくても送れるようにする */ }
+  const dup = receipts.find((r) => r.month === m && r.date === date && r.total === total);
+  if (dup && !confirm(`同じ日・同じ金額のレシートがもうあります。\n${dayLabel(dup.date)}「${dup.store}」${yen(dup.total)}（${PERSON[dup.payer]}が払った）\n\n相手のスマホで登録済みかもしれません。それでも送りますか？`)) return false;
+  const note = closedNote([m]);
+  if (note && !confirm(`この内容で送ります。${note}`)) return false;
+  return true;
+}
+
+// 締めた月にかかるときの注意書き（かからなければ空）
+function closedNote(ms) {
+  const hit = [...new Set(ms)].filter((m) => m && closed[m]);
+  return hit.length
+    ? `\n\n⚠️ ${hit.map(monthLabel).join('・')}はもう締めています。\n続けると精算額を計算し直し、差額は「未精算」に足されます。`
+    : '';
+}
+const dirWord = (dir, amt) => (!amt || dir === 'none' ? '貸し借りなし'
+  : `${dir === 'me_to_wife' ? '私→妻' : '妻→私'} ${yen(amt)}`);
+// 締めた月の精算が変わったら、前と後を見せる
+function reportReclosed(list) {
+  const ch = (list || []).filter((c) => c.before !== c.after || c.before_dir !== c.after_dir);
+  ch.forEach((c) => { closed[c.month] = { ...(closed[c.month] || {}), amount: c.after, dir: c.after_dir }; });
+  if (!ch.length) return;
+  alert(ch.map((c) => `${monthLabel(c.month)}の精算を計算し直しました\n${dirWord(c.before_dir, c.before)} → ${dirWord(c.after_dir, c.after)}`).join('\n\n')
+    + '\n\n差額はホームの「未精算」に反映されます');
+}
 
 // ===== ②' 金額だけ入力 =====
 function renderManual() {
@@ -480,12 +604,15 @@ $('#m-send').addEventListener('click', async () => {
   if (!Number.isInteger(amount) || amount === 0) { alert('金額を整数で入れてください'); $('#m-amount').focus(); return; }
   if (!date) { alert('日付を入れてください'); return; }
   if (!API.ready()) { toast('設定で GAS の URL と合言葉を入れてください'); go('settings'); return; }
+  if (!checkDate(date, false)) return;
 
   const btn = $('#m-send');
-  btn.disabled = true; btn.textContent = '送信中…';
+  btn.disabled = true; btn.textContent = '確認中…';
   try {
+    if (!(await confirmNew(date.slice(0, 7), date, amount))) return;
+    btn.textContent = '送信中…';
     const memo = $('#m-memo').value.trim() || '（メモなし）';
-    await API.call('save', {
+    const res = await API.call('save', {
       receipt: { date, store: '手入力', total: amount,
         payer: $('#m-payer').textContent === '妻' ? 'wife' : 'me',
         entered_by: store.get(LS.owner, 'me'), has_items: false },
@@ -493,6 +620,7 @@ $('#m-send').addEventListener('click', async () => {
     });
     month = date.slice(0, 7);
     invalidate(month);                    // 保存したぶんを必ず読み直す
+    reportReclosed(res.reclosed);
     toast('保存しました');
     go('list');
   } catch (e) {
@@ -549,6 +677,8 @@ function drawList(m = month) {
   const paid = calc(rows).paid;          // 実際に財布から出た額（負担額ではない）
   $('#paid-me').textContent = yen(paid.me);
   $('#paid-wife').textContent = yen(paid.wife);
+  const c = closed[m];
+  $('#list-close-sub').textContent = c ? `締め済み：${dirWord(c.dir, c.amount)}（押すと見直せます）` : '固定費を足して精算額を確定';
   const box = $('#list-cards'); box.innerHTML = '';
   const list = receipts.filter((r) => r.month === m).sort((a, b) => (a.date < b.date ? 1 : -1));
   $('#list-sum').textContent = list.length
@@ -602,7 +732,11 @@ async function renderDetail() {
     } catch (e) { /* 取れなければ下で一覧に戻す */ }
   }
   if (!r) { go('list'); return; }
+  if (view !== 'detail' || openId !== r.id) return;   // 待っている間に別の画面へ移った
   $('#d-title').textContent = r.store;
+  const hasPic = Boolean(r.photoData || r.hasPhoto);
+  $('#d-photo-set-txt').textContent = hasPic ? '写真を差し替える' : '写真を付ける';
+  $('#d-photo-del').hidden = !hasPic;
   const box = $('#d-photo');
   if (r.photoData) {
     box.innerHTML = `<img class="photo" src="${r.photoData}" alt="${esc(r.store)}のレシート">`;
@@ -634,6 +768,86 @@ async function renderDetail() {
     ul.appendChild(li);
   });
 }
+const ADJUST = '調整（税・割引）';
+const openReceipt = () => receipts.find((x) => x.id === openId);
+// 書き換える操作は本物のデータにだけ行う
+function needServer() {
+  if (API.ready()) return true;
+  toast('見本のデータは直せません。設定で GAS の URL と合言葉を入れてください');
+  return false;
+}
+
+// 直す：確認・仕訳の画面を「直す」用に開く
+$('#d-edit').addEventListener('click', () => {
+  const r = openReceipt();
+  if (!r || !needServer()) return;
+  draft = { editId: r.id, editMonth: r.month, date: r.date, store: r.store, total: r.total, payer: r.payer,
+    hasItems: r.hasItems, photo: r.photoData || '', ocr: 'edit', edited: {},
+    // 調整の行は合計との差からその場で作り直すので、持ち込まない
+    items: r.items.filter((i) => i.n !== ADJUST).map((i) => ({ ...i })) };
+  if (!draft.items.length) draft.items = [{ n: r.store, a: r.total, s: 'common', c: 'その他' }];
+  go('review');
+});
+
+// 写真を差し替える（写真がなければ付ける）
+$('#d-photo-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  const r = openReceipt();
+  if (!file || !r || !needServer()) return;
+  let photo;
+  try { photo = await shrink(file, 1200); }
+  catch (err) { alert(`写真を扱えませんでした。\n${err.message}`); return; }
+  $('#d-photo').innerHTML = '<div class="photo-none">写真を保存しています…</div>';
+  try {
+    await API.call('setPhoto', { receipt_id: r.id, photo });
+    r.photoData = photo; r.hasPhoto = true;
+    invalidate(r.month);
+    toast('写真を差し替えました');
+  } catch (err) {
+    alert(`写真を保存できませんでした。\n${err.message}`);
+  }
+  if (view === 'detail' && openId === r.id) renderDetail();
+});
+
+// 写真だけ消す
+$('#d-photo-del').addEventListener('click', async () => {
+  const r = openReceipt();
+  if (!r || !needServer()) return;
+  if (!confirm('このレシートの写真だけを消します。\n金額や品目は残ります。\n（写真はドライブのゴミ箱に移り、30日以内なら戻せます）')) return;
+  try {
+    await API.call('deletePhoto', { receipt_id: r.id });
+    r.photoData = null; r.hasPhoto = false;
+    invalidate(r.month);
+    toast('写真を消しました');
+  } catch (err) {
+    alert(`消せませんでした。\n${err.message}`);
+  }
+  if (view === 'detail' && openId === r.id) renderDetail();
+});
+
+// レシートを消す（スプレッドシートの「ゴミ箱」に移す）
+$('#d-delete').addEventListener('click', async () => {
+  const r = openReceipt();
+  if (!r || !needServer()) return;
+  if (!confirm(`${dayLabel(r.date)}「${r.store}」${yen(r.total)} を削除します。\n（スプレッドシートの「ゴミ箱」に残るので、あとから戻せます）${closedNote([r.month])}`)) return;
+  const btn = $('#d-delete');
+  btn.disabled = true;
+  try {
+    const res = await API.call('delete', { receipt_id: r.id, by: store.get(LS.owner, 'me') });
+    receipts = receipts.filter((x) => x.id !== r.id);
+    invalidate(r.month);
+    month = r.month;
+    reportReclosed(res.reclosed);
+    toast(res.already ? 'すでに削除されていました' : '削除しました');
+    go('list');
+  } catch (err) {
+    alert(`削除できませんでした。\n${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // ===== ⑤ 月末締め =====
 // 月の初日・末日（「9/1〜9/30 の登録分」と出すため）
 function monthRange(m) {
@@ -642,20 +856,27 @@ function monthRange(m) {
 }
 function renderClose() {
   const m = month;                      // 締めるのは「見ている月」。ボタンを押した日ではない
+  // まだ読んでいない月（ホームの「締めていません」から来たときなど）は読んでから描き直す
+  const loading = API.ready() && !loadedMonths.has(m);
+  if (loading) {
+    fetchMonth(m).then(() => { if (view === 'close' && month === m) renderClose(); })
+      .catch((e) => toast(`読めませんでした：${e.message}`));
+  }
   const fxMonthList = fxOf(m);
   $('#c-range').textContent = `${monthLabel(m)}に登録された分（${monthRange(m)}）だけが対象です。今日の日付は関係ありません`;
   const box = $('#fx-list'); box.innerHTML = '';
   fxMonthList.forEach((f, i) => {
     const need = f.amount === null;
+    const last = lastAmount(m, f);
     const d = document.createElement('div');
     d.className = `fx ${f.share}${need ? ' need' : ''}`;
     d.dataset.i = i;
     d.innerHTML = `
       <div class="r-top">
         <span class="static">${esc(f.name)}</span>
-        <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${f.amount ?? ''}" placeholder="${LAST[f.id] ?? 0}"><span class="cur">円</span></div>
+        <div class="r-amt"><input class="amt" type="number" inputmode="numeric" value="${f.amount ?? ''}" placeholder="${last ?? ''}"><span class="cur">円</span></div>
       </div>
-      ${need ? `<p class="need-txt" style="margin:0 0 8px">未入力です（先月は ${yen(LAST[f.id] ?? 0)}）</p>` : ''}
+      ${need ? `<p class="need-txt" style="margin:0 0 8px">未入力です${last !== null ? `（先月は ${yen(last)}）` : ''}</p>` : ''}
       <div class="r-bot">
         <div class="pick payer-col">
           <span class="pick-label">誰が払った？</span>
@@ -696,37 +917,116 @@ function renderClose() {
     + (s.common % 2 ? '<br>共通が奇数のため 1円は精算しません（切り捨て）。' : '')
     + '<br>プラスは渡す側、マイナスは受け取る側です。';
 
-  $('#c-do').disabled = left > 0;
-  $('#c-do').innerHTML = left > 0
-    ? `<svg class="ico"><use href="#i-lock"/></svg>あと ${left} 件の固定費を入れてください`
-    : '<svg class="ico"><use href="#i-lock"/></svg>この月を締める';
+  const c = closed[m];
+  $('#c-do').disabled = left > 0 || loading || closing;
+  $('#c-do').innerHTML = '<svg class="ico"><use href="#i-lock"/></svg>' + (
+    closing ? '締めています…'
+    : loading ? '読み込み中…'
+    : left > 0 ? `あと ${left} 件の固定費を入れてください`
+    : c ? `締め済み（${dirWord(c.dir, c.amount)}）・計算し直す`
+    : 'この月を締める');
 }
+
+// ----- 固定費の実額をサーバーに保存する -----
+// 打つたびに送ると通信が多いので、少し待ってまとめて送る。
+// 保存が終わるまでは、サーバーから来た古い中身で上書きしない（fxDirty）
+const fxDirty = new Set();
+const fxTimers = {};
+let fxEdits = 0;                          // 保存中にまた変えたかを見分ける番号
+let fxChain = Promise.resolve();          // 保存は1つずつ順番に送る
+let closing = false;
+let closeUnlocked = false;                // 締めた月を変えてよいと確かめたか（画面を開くたびに1回）
+
+function saveFixed(m) {
+  clearTimeout(fxTimers[m]);
+  if (!API.ready()) return Promise.resolve();
+  const snap = ++fxEdits;
+  const items = fxOf(m).map((f) => ({ template_id: f.tid || '', name: f.name, amount: f.amount, payer: f.payer, share: f.share }));
+  fxChain = fxChain.catch(() => {}).then(() => API.call('saveFixed', { month: m, items })).then((res) => {
+    if (snap === fxEdits) fxDirty.delete(m);
+    fxSaved.add(m);
+    fetchedAt.delete(m);                  // 次に開いたとき最新を取り直す
+    reportReclosed(res.reclosed);
+    if (view === 'close' && month === m) renderClose();
+    return res;
+  });
+  return fxChain;
+}
+function fxChanged(m) {
+  fxDirty.add(m); fxEdits++;
+  clearTimeout(fxTimers[m]);
+  fxTimers[m] = setTimeout(() => {
+    saveFixed(m).catch((e) => toast(`固定費を保存できませんでした：${e.message}`));
+  }, 800);
+  renderClose();
+}
+// 締めた月を変える前に1回だけ確かめる
+// 確認の窓が出ている間に欄から指が離れると、もう一度「変わった」が来る。二重に聞かない
+let askingClosed = false;
+function okToEditClosed(m) {
+  if (!closed[m] || closeUnlocked) return true;
+  if (askingClosed) return false;
+  askingClosed = true;
+  try {
+    closeUnlocked = confirm(`${monthLabel(m)}はもう締めています。\n固定費を変えると精算額を計算し直し、差額は「未精算」に足されます。\n変えますか？`);
+  } finally { askingClosed = false; }
+  return closeUnlocked;
+}
+
 $('#fx-list').addEventListener('change', (e) => {
   const d = e.target.closest('.fx'); if (!d || !e.target.classList.contains('amt')) return;
+  const m = month;
+  if (!okToEditClosed(m)) { renderClose(); return; }
   const v = e.target.value.trim();
-  fxOf(month)[d.dataset.i].amount = v === '' ? null : Number(v) || 0;
-  renderClose();
+  fxOf(m)[d.dataset.i].amount = v === '' ? null : Math.round(Number(v)) || 0;
+  fxChanged(m);
 });
 // 固定費も「誰の分？」「誰が払った？」をここで変えられる
 $('#fx-list').addEventListener('click', (e) => {
   const d = e.target.closest('.fx'); const f = d && fxOf(month)[d.dataset.i];
   if (!f) return;
-  if (e.target.closest('.share')) f.share = next(SHARES, f.share);
-  else if (e.target.closest('.payer')) f.payer = other(f.payer);
-  else return;
-  renderClose();
+  const isShare = e.target.closest('.share'), isPayer = e.target.closest('.payer');
+  if (!isShare && !isPayer) return;
+  if (!okToEditClosed(month)) return;
+  if (isShare) f.share = next(SHARES, f.share); else f.payer = other(f.payer);
+  fxChanged(month);
 });
 $('#fx-add').addEventListener('click', () => {
-  fxOf(month).push({ id: 'tmp' + Date.now(), name: `${monthLabel(month)}だけの項目`, kind: 'variable', payer: 'me', share: 'common', amount: null });
-  renderClose();
+  if (!okToEditClosed(month)) return;
+  fxOf(month).push({ id: 'tmp' + Date.now(), tid: '', name: `${monthLabel(month)}だけの項目`, kind: 'variable', payer: 'me', share: 'common', amount: null });
+  fxChanged(month);
 });
-$('#c-do').addEventListener('click', () => {
+$('#c-do').addEventListener('click', async () => {
   const m = month;
   const s = calc([...monthRows(m), ...fxRows(m)]);
-  closed[m] = { amount: s.amount, dir: s.dir };
-  settleMonth = m;
-  toast(`${monthLabel(m)}を締めました`);
-  go('settle');
+  if (!API.ready()) {                      // 見本のときは手元だけで締める
+    closed[m] = { amount: s.amount, dir: s.dir };
+    settleMonth = m;
+    toast(`${monthLabel(m)}を締めました`);
+    go('settle');
+    return;
+  }
+  if (closed[m] && !confirm(`${monthLabel(m)}はもう締めています。いまの内容で計算し直しますか？\n差額は「未精算」に足されます。`)) return;
+  closing = true; renderClose();
+  try {
+    await saveFixed(m);                   // 画面の固定費を先に保存してから締める
+    const res = await API.call('close', { month: m });
+    const got = res.settle;
+    closed[m] = { amount: got.amount, dir: got.direction };
+    invalidate(m);                        // 締めた内容・未精算を取り直す
+    settleMonth = m;
+    // 画面で見ていた額とサーバーの額が違う＝相手のスマホで足されていた
+    if (got.amount !== s.amount || got.direction !== s.dir) {
+      alert(`相手のスマホで登録された分があったため、精算額が画面と変わりました。\n画面：${dirWord(s.dir, s.amount)}\n確定：${dirWord(got.direction, got.amount)}`);
+    }
+    toast(`${monthLabel(m)}を締めました`);
+    go('settle');
+  } catch (e) {
+    alert(`締められませんでした。\n${e.message}`);
+  } finally {
+    closing = false;
+    if (view === 'close') renderClose();
+  }
 });
 
 // ===== ⑥ 分析 =====
@@ -775,6 +1075,10 @@ function drawStats() {
   }
 
   const prev = monthRows(PREV_M).reduce((t, r) => t + r.amount, 0);
+  // 今月はまだ途中。月初は「減った」と出やすいので、比べている範囲を書く
+  const day = new Date().getDate();
+  $('#stats-early').hidden = false;
+  $('#stats-early').textContent = `今月は${day}日までの分、先月は1か月分です。月の途中は今月の方が少なく出ます`;
   const diff = now - prev;
   const word = diff > 0 ? '増えた' : diff < 0 ? '減った' : '同じ';
   const cls = diff > 0 ? 'up' : diff < 0 ? 'down' : 'same';
@@ -786,14 +1090,28 @@ function drawStats() {
 
 // ===== ⑦ 精算の記録 =====
 function renderSettle() {
+  // 相手のスマホで記録した分を取り込む（未精算を二重に渡さないように）
+  if (API.ready() && !isFresh(THIS_M)) {
+    fetchMonth(THIS_M).then(() => { if (view === 'settle') drawSettle(); }).catch(() => {});
+  }
+  $('#s-date').value = todayStr();
+  $('#s-memo').value = '';
+  sTouched = false;
+  drawSettle();
+}
+// 金額や向きを自分で変えたら、あとから届いた最新の値で書き換えない
+let sTouched = false;
+$('#s-amt').addEventListener('input', () => { sTouched = true; });
+function drawSettle() {
   const un = unpaid();
   $('#s-amount').textContent = un.amount.toLocaleString('ja-JP');
   $('#s-flow').innerHTML = un.amount ? flowHTML(un.dir) : '<span class="flow-none">すべて精算済みです</span>';
   $('#s-month').textContent = `${monthLabel(un.month || settleMonth)}分`;
-  $('#s-date').value = '2026-10-03';
-  $('#s-amt').value = un.amount || '';
-  $('#s-dir').textContent = un.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻';
-  $('#s-hist').innerHTML = settles.length ? settles.map((p) => `
+  if (!sTouched) {
+    $('#s-amt').value = un.amount || '';
+    $('#s-dir').textContent = un.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻';
+  }
+  $('#s-hist').innerHTML = settles.length ? settles.slice().reverse().map((p) => `
     <div class="hist" data-pid="${p.id}">
       <div><div class="k">${monthLabel(p.month)}分　${p.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻'}</div>
       <div class="sub">${p.date} に${p.method}${p.memo ? `・${esc(p.memo)}` : ''}</div></div>
@@ -801,22 +1119,51 @@ function renderSettle() {
       <button class="del" aria-label="削除">×</button>
     </div>`).join('') : '<p class="hint">まだ記録がありません</p>';
 }
-$('#s-dir').addEventListener('click', (e) => { e.target.textContent = e.target.textContent === '妻 → 私' ? '私 → 妻' : '妻 → 私'; });
-$('#s-save').addEventListener('click', () => {
+$('#s-dir').addEventListener('click', (e) => { sTouched = true; e.target.textContent = e.target.textContent === '妻 → 私' ? '私 → 妻' : '妻 → 私'; });
+$('#s-save').addEventListener('click', async () => {
   const amt = Number($('#s-amt').value);
-  if (!amt) { alert('金額を入れてください'); return; }
-  settles.unshift({ id: 'p' + Date.now(), date: $('#s-date').value, month: unpaid().month || settleMonth,
-    method: $('#s-method').value, memo: $('#s-memo').value, amount: amt,
-    dir: $('#s-dir').textContent === '妻 → 私' ? 'wife_to_me' : 'me_to_wife' });
-  $('#s-memo').value = '';
-  renderSettle(); toast('記録しました');
+  const date = $('#s-date').value;
+  if (!Number.isInteger(amt) || amt <= 0) { alert('金額を整数で入れてください'); return; }
+  if (!date) { alert('日付を入れてください'); return; }
+  const un = unpaid();
+  if (amt > un.amount && !confirm(`未精算（${yen(un.amount)}）より多い額です。このまま記録しますか？`)) return;
+  const p = { month: un.month || settleMonth, date, amount: amt,
+    method: $('#s-method').value, memo: $('#s-memo').value.trim(),
+    direction: $('#s-dir').textContent === '妻 → 私' ? 'wife_to_me' : 'me_to_wife' };
+  // 向きが逆だと、借りが消えずに倍になる
+  if (un.amount && p.direction !== un.dir
+    && !confirm(`向きが未精算と逆です（未精算は ${un.dir === 'wife_to_me' ? '妻 → 私' : '私 → 妻'}）。\n逆向きで記録すると、未精算が減らずに増えます。このまま記録しますか？`)) return;
+  if (!API.ready()) {                     // 見本のときは手元だけ
+    settles.push({ ...p, id: 'p' + Date.now(), dir: p.direction });
+    $('#s-memo').value = ''; sTouched = false; drawSettle(); toast('記録しました'); return;
+  }
+  const btn = $('#s-save'); btn.disabled = true;
+  try {
+    const res = await API.call('settle', { settle: p });
+    settles = res.settles.map(fromSettle);
+    fetchedAt.clear();                    // 未精算はどの月の読み込みにも付いてくるので全部古くなる
+    $('#s-memo').value = ''; sTouched = false; drawSettle(); toast('記録しました');
+  } catch (e) {
+    alert(`記録できませんでした。\n${e.message}`);
+  } finally { btn.disabled = false; }
 });
-$('#s-hist').addEventListener('click', (e) => {
+$('#s-hist').addEventListener('click', async (e) => {
   const h = e.target.closest('[data-pid]');
   if (!h || !e.target.closest('.del')) return;
-  settles = settles.filter((p) => p.id !== h.dataset.pid);
-  renderSettle();
+  const p = settles.find((x) => x.id === h.dataset.pid);
+  if (!p || !confirm(`${p.date} の ${yen(p.amount)} の記録を消しますか？\n消すと、その分がまた「未精算」に戻ります。`)) return;
+  if (!API.ready()) { settles = settles.filter((x) => x !== p); drawSettle(); return; }
+  try {
+    const res = await API.call('deleteSettle', { id: p.id });
+    settles = res.settles.map(fromSettle);
+    fetchedAt.clear();
+    drawSettle(); toast('記録を消しました');
+  } catch (err) {
+    alert(`消せませんでした。\n${err.message}`);
+  }
 });
+const fromSettle = (p) => ({ id: String(p.id), date: p.date, month: p.month, dir: p.direction,
+  amount: Number(p.amount) || 0, method: p.method || '', memo: p.memo || '' });
 
 // ===== ⑧ 設定 =====
 function renderSettings() {
@@ -826,13 +1173,15 @@ function renderSettings() {
     ? '<b style="color:var(--ok)">設定済みです</b>'
     : '未設定です。いまはデモのデータが出ています';
   document.querySelectorAll('input[name="owner"]').forEach((r) => { r.checked = r.value === store.get(LS.owner, 'me'); });
-  $('#tpl-list').innerHTML = templates.map((t, i) => `
-    <div class="fx ${t.share}" data-i="${i}">
+  const list = activeTpl();
+  $('#tpl-list').innerHTML = list.length ? list.map((t) => `
+    <div class="fx ${t.share}" data-id="${esc(t.id)}">
       <div class="r-top">
         <span class="static">${esc(t.name)}</span>
         <div class="r-amt">${t.kind === 'fixed'
-          ? `<span class="fixed">${yen(t.def)}</span>`
+          ? `<input class="amt tpl-amt" type="number" inputmode="numeric" value="${t.def}"><span class="cur">円</span>`
           : '<span class="cur">毎月入力</span>'}</div>
+        <button class="del tpl-del" type="button" aria-label="${esc(t.name)}を消す">×</button>
       </div>
       <div class="r-bot">
         <div class="pick kind-col">
@@ -848,26 +1197,58 @@ function renderSettings() {
           <button class="share" type="button" aria-label="誰の分か：${SHARE_LABEL[t.share]}。タップで変更">${SHARE_LABEL[t.share]}${SWAP}</button>
         </div>
       </div>
-    </div>`).join('');
+    </div>`).join('') : '<p class="hint">まだありません。下から追加してください</p>';
+}
+const tplOf = (el) => { const d = el.closest('.fx'); return d && templates.find((t) => t.id === d.dataset.id); };
+
+// ----- テンプレートをサーバーに保存する（件数が少ないので丸ごと送る）-----
+let tplTimer = null, tplEdits = 0, tplDirty = false;
+let tplChain = Promise.resolve();
+function tplChanged() {
+  tplDirty = true; tplEdits++;
+  // 締めていない月のうち、まだ固定費を保存していない月は、テンプレートから作り直す
+  Object.keys(fxByMonth).forEach((mm) => { if (!closed[mm] && !fxSaved.has(mm)) delete fxByMonth[mm]; });
+  renderSettings();
+  if (!API.ready()) { tplDirty = false; return; }
+  clearTimeout(tplTimer);
+  tplTimer = setTimeout(() => {
+    const snap = tplEdits;
+    const body = templates.map((t) => ({ id: t.id, name: t.name, kind: t.kind, amount_default: t.def,
+      payer: t.payer, share: t.share, active: t.active !== false }));
+    tplChain = tplChain.catch(() => {}).then(() => API.call('saveTemplates', { templates: body }))
+      .then(() => { if (snap === tplEdits) tplDirty = false; fetchedAt.clear(); })
+      .catch((e) => toast(`固定費を保存できませんでした：${e.message}`));
+  }, 700);
 }
 $('#tpl-list').addEventListener('click', (e) => {
-  const d = e.target.closest('.fx'); const t = d && templates[d.dataset.i];
+  const t = tplOf(e.target);
   if (!t) return;
   if (e.target.closest('.share')) t.share = next(SHARES, t.share);
   else if (e.target.closest('.payer')) t.payer = other(t.payer);
   else if (e.target.closest('.kind')) t.kind = t.kind === 'fixed' ? 'variable' : 'fixed';
-  else return;
-  // テンプレートを変えたら、まだ締めていない月の分にも反映する
-  Object.keys(fxByMonth).forEach((mm) => {
-    if (closed[mm]) return;                      // 締め済みの月は触らない
-    fxByMonth[mm] = templates.map((x) => {
-      const cur = fxByMonth[mm].find((y) => y.id === x.id);
-      return { ...x, amount: x.kind === 'fixed' ? x.def : (cur ? cur.amount : null) };
-    });
-  });
-  renderSettings();
+  else if (e.target.closest('.tpl-del')) {
+    if (!confirm(`固定費「${t.name}」を消しますか？\n（すでに固定費を入れた月の分は残ります）`)) return;
+    templates.splice(templates.indexOf(t), 1);
+  } else return;
+  tplChanged();
 });
-$('#tpl-add').addEventListener('click', () => toast('固定費の保存は段階5で作ります'));
+$('#tpl-list').addEventListener('change', (e) => {
+  const t = tplOf(e.target);
+  if (!t || !e.target.classList.contains('tpl-amt')) return;
+  t.def = Math.round(Number(e.target.value)) || 0;
+  tplChanged();
+});
+$('#tpl-add').addEventListener('click', () => {
+  const name = $('#tpl-name').value.trim();
+  const v = $('#tpl-amt').value.trim();
+  if (!name) { alert('名前を入れてください'); $('#tpl-name').focus(); return; }
+  // 金額が空欄なら「毎月入力」（電気代など）、入っていれば「定額」
+  templates.push({ id: `f-${Date.now()}`, name: name.slice(0, 40), kind: v === '' ? 'variable' : 'fixed',
+    def: Math.round(Number(v)) || 0, payer: store.get(LS.owner, 'me'), share: 'common', active: true });
+  $('#tpl-name').value = ''; $('#tpl-amt').value = '';
+  tplChanged();
+  toast(`「${name}」を追加しました`);
+});
 
 document.querySelectorAll('input[name="owner"]').forEach((r) => r.addEventListener('change', (e) => {
   store.set(LS.owner, e.target.value);
@@ -924,6 +1305,7 @@ function fetchMonth(m) {
       clear();
       if (g !== gen) return fetchMonth(m);              // 途中で保存された。取り直す
       receipts = receipts.filter((r) => r.month !== m).concat(res.receipts.map(fromServer));
+      applyServerState(res, m);
       loadedMonths.add(m);
       fetchedAt.set(m, Date.now());
       return res;
@@ -934,13 +1316,34 @@ function fetchMonth(m) {
   return p;
 }
 
-// 未精算はサーバーが持つ値。起動時に1回だけ入れる。
-// 毎回入れ直すと、手元で締めた内容を消してしまい、向きが逆の未精算が出てしまう。
-function applyUnpaid(res) {
-  const u = res && res.unpaid;
-  closed = {}; settles = [];
-  if (u && u.amount > 0) closed[u.month] = { amount: u.amount, dir: u.direction };
-  settleMonth = (u && u.month) || PREV_M;
+// 締め・精算の記録・固定費はサーバーが正。読むたびに入れ直して、2台で同じにする
+const fxSaved = new Set();              // サーバーに固定費が保存されている月
+const fromFixed = (f, i) => ({ id: f.template_id || `x${i}`, tid: f.template_id || '', name: f.name,
+  kind: (templates.find((t) => t.id === f.template_id) || {}).kind || 'variable',
+  amount: f.amount === null || f.amount === '' ? null : Number(f.amount) || 0, payer: f.payer, share: f.share });
+function applyServerState(res, m) {
+  if (!res.closedMonths) {               // 古い版の GAS（段階5より前）。未精算だけ使う
+    const u = res.unpaid;
+    closed = {};
+    if (u && u.amount > 0) closed[u.month] = { amount: u.amount, dir: u.direction };
+    settleMonth = (u && u.month) || PREV_M;
+    return;
+  }
+  closed = {};
+  res.closedMonths.forEach((c) => { closed[c.month] = { amount: Number(c.amount) || 0, dir: c.direction, at: c.closed_at }; });
+  settles = (res.settles || []).map(fromSettle);
+  settleMonth = (res.unpaid && res.unpaid.month) || PREV_M;
+  if (!tplDirty) {                       // 自分が変えて保存中なら上書きしない
+    templates.length = 0;
+    (res.templates || []).forEach((t) => templates.push({ id: t.id, name: t.name, kind: t.kind,
+      def: Number(t.amount_default) || 0, payer: t.payer, share: t.share, active: t.active !== false }));
+  }
+  if (!fxDirty.has(m)) {
+    const fx = res.fixed || [];
+    if (fx.length || closed[m]) { fxByMonth[m] = fx.map(fromFixed); fxSaved.add(m); }
+    else { delete fxByMonth[m]; fxSaved.delete(m); }       // 未保存ならテンプレートから作る
+  }
+  fxPrevByMonth[m] = (res.fixedPrev || []).map(fromFixed);
 }
 
 // まだ読んでいない月だけ取りに行く
@@ -960,7 +1363,7 @@ async function boot() {
   templates.length = 0;
   Object.keys(fxByMonth).forEach((k) => { delete fxByMonth[k]; });
   try {
-    applyUnpaid(await fetchMonth(THIS_M));   // 先月は必要になってから読む（起動を速くする）
+    await fetchMonth(THIS_M);   // 先月はホームが裏で読む（起動を速くする）
   } catch (e) {
     toast(`データを読めませんでした：${e.message}`);
   }
