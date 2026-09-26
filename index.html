@@ -38,6 +38,7 @@
     <p class="hero-label">今月の精算（レシート分）</p>
     <p class="hero-amount"><span id="home-amount">0</span><span class="unit">円</span></p>
     <div class="hero-flow" id="home-flow"></div>
+    <p class="flow-words" id="home-words"></p>
     <div class="hero-mini">
       <div><span class="k">今月の支出</span><b id="home-spend">0円</b></div>
       <div><span class="k">レシート</span><b id="home-count">0枚</b></div>
@@ -145,6 +146,11 @@
       <li><i class="dot me"></i>私 <b id="lm-me">0円</b></li>
       <li><i class="dot wife"></i>妻 <b id="lm-wife">0円</b></li>
     </ul>
+    <div class="paidby">
+      <div><span class="k me">私が払った</span><b id="paid-me">0円</b></div>
+      <div><span class="k wife">妻が払った</span><b id="paid-wife">0円</b></div>
+    </div>
+    <p class="paidby-note">レシート分だけの金額です。固定費は含みません</p>
   </div>
   <div id="list-cards"></div>
   <button class="action" data-go="close">
