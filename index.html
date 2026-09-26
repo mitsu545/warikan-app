@@ -166,9 +166,13 @@
     <p class="paidby-note">レシート分だけの金額です。固定費は含みません</p>
   </div>
   <div class="card" id="lfx-card">
-    <p class="field-title">この月の固定費 <span class="fx-count" id="lfx-count"></span></p>
-    <p class="hint" style="margin-top:0">金額を入れるとチェックが付きます。払わない月は 0 を入れてください。📷 で請求書などの写真も付けられます</p>
-    <div id="lfx-list"></div>
+    <button class="fx-head" id="lfx-head" type="button" aria-expanded="false">
+      <span class="caret">▶</span><span class="grow">この月の固定費</span><span class="fx-count" id="lfx-count"></span>
+    </button>
+    <div id="lfx-body" hidden>
+      <p class="hint">金額を入れるとチェックが付きます。払わない月は 0 を入れてください。📷 で請求書などの写真も付けられます</p>
+      <div id="lfx-list"></div>
+    </div>
     <input type="file" id="lfx-file" accept="image/*" hidden>
   </div>
   <div id="list-cards"></div>
@@ -282,9 +286,9 @@
     <p class="hint" style="margin-top:0"><b id="s-month"></b>の精算です。記録する日付は今日でかまいません</p>
     <div class="field-grid">
       <label class="field"><span>日付</span><input type="date" id="s-date"></label>
-      <label class="field"><span>金額</span><input type="number" id="s-amt" inputmode="numeric"></label>
-      <label class="field"><span>向き</span><button class="pill" id="s-dir" type="button" data-dir="wife_to_me"></button></label>
       <label class="field"><span>方法</span><select id="s-method"><option>振込</option><option>現金</option><option>PayPay</option><option>その他</option></select></label>
+      <label class="field wide"><span>金額</span><input type="number" id="s-amt" inputmode="numeric"></label>
+      <label class="field wide"><span>向き</span><button class="pill" id="s-dir" type="button" data-dir="wife_to_me"></button></label>
     </div>
     <label class="field"><span>メモ</span><input type="text" id="s-memo" placeholder="例：9月分"></label>
     <button class="submit" id="s-save" style="min-height:52px;font-size:17px"><svg class="ico"><use href="#i-check"/></svg>記録する</button>
@@ -303,8 +307,8 @@
 
   <div class="card">
     <p class="field-title">2人の呼び名</p>
-    <p class="hint" style="margin-top:0">画面の「私」「妻」がこの名前になります。色は変わりません（<b style="color:var(--me)">青</b>・<b style="color:var(--wife)">赤</b>）。2台で共通です</p>
-    <div class="field-grid">
+    <p class="hint" style="margin-top:0">画面の「私」「妻」がこの名前になります。色は変わりません（<b style="color:var(--fill-me)">青</b>・<b style="color:var(--fill-wife)">赤</b>）。2台で共通です</p>
+    <div class="field-grid one">
       <label class="field"><span><i class="dot me"></i> 青の人</span><input type="text" id="name-me" maxlength="10" placeholder="私"></label>
       <label class="field"><span><i class="dot wife"></i> 赤の人</span><input type="text" id="name-wife" maxlength="10" placeholder="妻"></label>
     </div>
