@@ -120,6 +120,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .who.wife { color: var(--fill-wife); background: var(--tint-wife); }
 .arrow { color: var(--muted); font-size: 17px; font-weight: 800; }
 .flow-none { color: var(--muted); font-size: 15px; font-weight: 700; }
+/* 矢印だけだと向きを取り違えるので、言葉でも書く */
+.flow-words { margin: 8px 0 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+.flow-words b { color: var(--text); }
 
 /* ホーム：精算カードの中の補足（今月の支出・レシート枚数） */
 .hero-mini { display: flex; justify-content: center; gap: 22px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
@@ -216,7 +219,8 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .daysep:first-child { margin-top: 4px; }
 
 /* レシートカード */
-.rcard { display: grid; grid-template-columns: 64px 1fr; gap: 13px; width: 100%; padding: 11px; margin-bottom: 10px; border-radius: 18px; box-shadow: var(--sh-up-sm); }
+.rcard { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 13px; width: 100%; padding: 11px; margin-bottom: 10px; border-radius: 18px; box-shadow: var(--sh-up-sm); }
+.rcard > div { min-width: 0; }                       /* これが無いと長い店名で枠を押し広げる */
 .rcard .thumb { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; box-shadow: var(--sh-in-sm); }
 .rcard .nophoto { width: 64px; height: 64px; border-radius: 14px; display: grid; place-items: center; color: var(--muted); box-shadow: var(--sh-in-sm); font-size: 11px; text-align: center; line-height: 1.2; }
 /* 支払った人の札。青＝私、桃＝妻 */
@@ -224,9 +228,21 @@ input::placeholder { color: var(--muted); opacity: .65; }
 .chip.me { color: var(--fill-me); background: var(--tint-me); }
 .chip.wife { color: var(--fill-wife); background: var(--tint-wife); }
 .rcard .top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.rcard .store { font-weight: 800; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rcard .total { font-weight: 800; font-size: 16px; flex: none; }
+/* 店名は小さい字で折り返す。3行まで（保存される店名は60文字まで） */
+.rcard .store { min-width: 0; font-weight: 800; font-size: 14px; line-height: 1.3;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  overflow: hidden; overflow-wrap: anywhere; }
+.rcard .total { font-weight: 800; font-size: 16px; flex: none; white-space: nowrap; }
 .rcard .meta { font-size: 12px; color: var(--muted); margin: 2px 0 8px; }
+
+/* 誰がいくら払ったか（負担ではなく、財布から出た額） */
+.paidby { display: flex; gap: 10px; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+.paidby div { flex: 1; min-width: 0; text-align: center; }
+.paidby .k { display: block; font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+.paidby .k.me { color: var(--fill-me); }
+.paidby .k.wife { color: var(--fill-wife); }
+.paidby b { font-size: 15px; font-weight: 800; }
+.paidby-note { margin: 7px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
 
 /* 支払対象の帯（積み上げ順 共通→私→妻） */
 .track { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--bg); box-shadow: var(--sh-in-sm); }

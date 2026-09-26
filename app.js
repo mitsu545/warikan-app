@@ -146,6 +146,12 @@ function flowHTML(dir) {
   const [f, t] = dir === 'me_to_wife' ? ['me', 'wife'] : ['wife', 'me'];
   return `<span class="who ${f}">${PERSON[f]}</span><span class="arrow">→</span><span class="who ${t}">${PERSON[t]}</span>`;
 }
+// 矢印の向きは取り違えやすいので、言葉でも書く
+function flowWords(s) {
+  if (s.dir === 'none') return '';            // 上に「貸し借りなし」が出るので重ねない
+  const [f, t] = s.dir === 'me_to_wife' ? ['me', 'wife'] : ['wife', 'me'];
+  return `<b>${PERSON[f]}</b>が<b>${PERSON[t]}</b>に <b>${yen(s.amount)}</b> 渡します`;
+}
 function shareTotals(rows) {
   const t = { common: 0, me: 0, wife: 0 };
   rows.forEach((r) => { t[r.share] += r.amount; });
@@ -193,6 +199,7 @@ function renderHome() {
   $('#home-month').textContent = monthLabel(THIS_M);
   $('#home-amount').textContent = s.amount.toLocaleString('ja-JP');
   $('#home-flow').innerHTML = flowHTML(s.dir);
+  $('#home-words').innerHTML = flowWords(s);
   const mine = receipts.filter((r) => r.month === THIS_M);
   $('#home-spend').textContent = yen(monthRows(THIS_M).reduce((t, r) => t + r.amount, 0));
   $('#home-count').textContent = `${mine.length}枚`;
@@ -505,6 +512,7 @@ async function renderList() {
   const m = month;
 
   if (API.ready() && !loadedMonths.has(m)) {     // 初めての月だけ待つ
+    clearSummary();                              // 前の月の数字を残さない
     $('#list-cards').innerHTML = '<p class="hint">読み込み中…</p>';
     try { await fetchMonth(m); }
     catch (e) {
@@ -526,9 +534,21 @@ async function renderList() {
   }
 }
 
+// 読み込み中・失敗中に、前の月の数字が新しい月の見出しの下に残らないようにする
+function clearSummary() {
+  $('#list-sum').textContent = '';
+  $('#paid-me').textContent = '—';
+  $('#paid-wife').textContent = '—';
+  SHARES.forEach((k) => { $(`#lg-${k}`).style.width = '0%'; $(`#lm-${k}`).textContent = '—'; });
+}
+
 function drawList(m = month) {
   if (m !== month) return;
-  drawTrack('l', shareTotals(monthRows(m).map((r) => ({ share: r.share, amount: r.amount }))));
+  const rows = monthRows(m);
+  drawTrack('l', shareTotals(rows.map((r) => ({ share: r.share, amount: r.amount }))));
+  const paid = calc(rows).paid;          // 実際に財布から出た額（負担額ではない）
+  $('#paid-me').textContent = yen(paid.me);
+  $('#paid-wife').textContent = yen(paid.wife);
   const box = $('#list-cards'); box.innerHTML = '';
   const list = receipts.filter((r) => r.month === m).sort((a, b) => (a.date < b.date ? 1 : -1));
   $('#list-sum').textContent = list.length
